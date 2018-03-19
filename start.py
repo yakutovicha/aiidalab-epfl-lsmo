@@ -16,7 +16,9 @@ def get_start_widget(appbase, jupbase):
     </ul></td>
     
     <td valign="top"><ul>
-    <li><a href="{appbase}/results/analysis.ipynb" target="_blank">Analysis</a>
+    <li><a href="{appbase}/results/analysis.ipynb" target="_blank">Preprocess</a>
+    <li><a href="{appbase}/results/show.ipynb" target="_blank">Show</a>
+    <li><a href="{appbase}/results/show_interactive.ipynb" target="_blank">Show (interactive)</a>
     </ul></td>
     
      <td valign="top"><ul>
