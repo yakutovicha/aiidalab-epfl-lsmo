@@ -13,6 +13,7 @@ def get_start_widget(appbase, jupbase):
     <tr>
     <td valign="top"><ul>
     <li><a href="{appbase}/calculations/isotherm.ipynb" target="_blank">Isotherm</a>
+    <li><a href="{appbase}/calculations/isotherm_multi.ipynb" target="_blank">Isotherm (multi)</a>
     </ul></td>
     
     <td valign="top"><ul>

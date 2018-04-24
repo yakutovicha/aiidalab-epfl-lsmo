@@ -11,8 +11,9 @@ import datetime
 
 class StructureBrowser(ipw.VBox):
     
-    def __init__(self):
+    def __init__(self, multi=False):
         # Find all process labels
+        self.multi=multi
         qb = QueryBuilder()
         qb.append(WorkCalculation,
                   project="attributes._process_label",
@@ -28,7 +29,7 @@ class StructureBrowser(ipw.VBox):
 
         layout = ipw.Layout(width="900px")
 
-        self.mode = ipw.RadioButtons(options=['all', 'uploaded', 'edited', 'calculated'],
+        self.mode = ipw.RadioButtons(options=['all', 'uploaded', 'edited', 'calculated', 'not used'],
                                      layout=ipw.Layout(width="25%"))
         
         
@@ -59,8 +60,11 @@ class StructureBrowser(ipw.VBox):
         box = ipw.VBox([self.age_selection,
                         hr,
                         ipw.HBox([self.mode])])
-        
-        self.results = ipw.Dropdown(layout=layout)
+        if multi:
+            self.results = ipw.SelectMultiple(layout=layout)
+        else:
+            self.results = ipw.Dropdown(layout=layout)
+
         self.search()
         super(StructureBrowser, self).__init__([box, hr, self.results])
     
@@ -68,8 +72,8 @@ class StructureBrowser(ipw.VBox):
     def preprocess(self):
         qb = QueryBuilder()
         filters = {'extras': {'!has_key': 'formula'}}
-        filters['or'] = [{'type':CifData._plugin_type_string},{'type':StructureData._plugin_type_string}]
-        qb.append(Node, filters=filters)
+        #filters['or'] = [{'type':CifData._plugin_type_string},{'type':StructureData._plugin_type_string}]
+        qb.append(CifData, filters=filters)
         for n in qb.all(): # iterall() would interfere with set_extra()
             try:
                 formula = n[0].get_formula()
@@ -96,8 +100,8 @@ class StructureBrowser(ipw.VBox):
         filters['ctime'] = {'and':[{'<=': self.end_date},{'>': self.start_date}]}
         if self.mode.value == "uploaded":
             qb2 = QueryBuilder()
-            qb2.append(StructureData, project=["id"])
-            qb2.append(Node, input_of=StructureData)
+            qb2.append(CifData, project=["id"])
+            qb2.append(Node, input_of=CifData)
             processed_nodes = [n[0] for n in qb2.all()]
             if processed_nodes:
                 filters['id'] = {"!in":processed_nodes}
@@ -111,22 +115,30 @@ class StructureBrowser(ipw.VBox):
             qb.append(WorkCalculation)
             qb.append(CifData, output_of=WorkCalculation, filters=filters)
 
+        elif self.mode.value == "not used":
+            qb2 = QueryBuilder()
+            qb2.append(CifData, project=["id"])
+            qb2.append(Node, output_of=CifData)
+            processed_nodes = [n[0] for n in qb2.all()]
+            if processed_nodes:
+                filters['id'] = {"!in":processed_nodes}
+            qb.append(CifData, filters=filters)            
+
         else:
             self.mode.value == "all"
             qb.append(CifData, filters=filters)
 
-#        qb.order_by({StructureData:{'ctime':'desc'}})
         matches = set([n[0] for n in qb.iterall()])
         matches = sorted(matches, reverse=True, key=lambda n: n.ctime)
         
         c = len(matches)
         options = OrderedDict()
-        options["Select a Structure (%d found)"%c] = False
-        print(matches)
+        if not self.multi:
+            options["Select a Structure (%d found)"%c] = False
         for n in matches:
             label  = "PK: %d" % n.pk
             label += " | " + n.ctime.strftime("%Y-%m-%d %H:%M")
-#            label += " | " + n.get_extra("formula")
+            label += " | " + (n.get_extra("formula") if n.get_extra("formula") is not None else " formula is n/a")
             label += " | " + n.description
             options[label] = n
 
