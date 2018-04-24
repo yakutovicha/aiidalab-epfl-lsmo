@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 class Isotherm(WorkChain):
     """
-    Workchain that for a given matherial will compute
+    Workchain that for a given matherial will compute an isotherm of a certain gaz adsorption
     """
 
     @classmethod
@@ -57,7 +57,7 @@ class Isotherm(WorkChain):
 
     def init(self):
         """
-        Initialize variables and the scales we want to compute
+        Initialize variables and the pressures we want to compute
         """
         self.ctx.p = 0
         self.ctx.prev_pk = None
@@ -83,15 +83,15 @@ class Isotherm(WorkChain):
         """
         This is the main condition of the while loop, as defined
         in the outline of the Workchain. We only run another
-        pw.x calculation if the current iteration is smaller than
-        the total number of scale factors we want to compute
+        raspa calculation if the current iteration is smaller than
+        the total number of pressures we want to compute
         """
         return self.ctx.p < len(self.ctx.pressures)
 
     def run_raspa(self):
         """
-        This is the main function that will perform a pw.x
-        calculation for the current scaling factor
+        This is the main function that will perform a raspa
+        calculation for the current pressure
         """
         pressure = self.ctx.pressures[self.ctx.p]
         self.ctx.parameters['GeneralSettings']['ExternalPressure'] = pressure
@@ -120,7 +120,7 @@ class Isotherm(WorkChain):
 
     def parse_raspa(self):
         """
-        Extract the volume and total energy of the last completed PwCalculation
+        Extract the pressure and loading average of the last completed raspa calculation
         """
         pressure = self.ctx.parameters['GeneralSettings']['ExternalPressure']/1e5
         loading_average = self.ctx.raspa["component_0"].dict.loading_absolute_average
@@ -129,7 +129,7 @@ class Isotherm(WorkChain):
 
     def return_result(self):
         """
-        Attach the results of the PwCalculations and the initial structure to the outputs
+        Attach the results of the raspa calculation and the initial structure to the outputs
         """
         result = {
             "initial_structure": self.inputs.structure,
@@ -163,6 +163,7 @@ class IsothermSettings():
     def settings_panel(self):   
         self.He=ipw.FloatText(
             value=0.347,
+            step=0.01,
             description='Helium Void Fraction:',
             disabled=False,
             layout=ipw.Layout(width="280px"),
@@ -193,7 +194,34 @@ class IsothermSettings():
             style = {"description_width":"40px"}
         )
         
+        self.ff = ipw.Dropdown(
+            options=('GenericZeolites', 'tcc', "TraPPE", "GenericMOFs", "GarciaPerez2016" ),
+            value='tcc',
+            description='Select forcefield:',
+            layout=self.layout,
+            style=self.style,
+            )
+
+        self.init_cycles = ipw.IntText(
+                value=2000,
+                step=1000,
+                description = "Number of initialization cycles",
+                disabled=False,
+                layout=self.layout,
+                style=self.style,
+            )
+        self.prod_cycles = ipw.IntText(
+                value=2000,
+                step=1000,
+                description = "Number of production cycles",
+                disabled=False,
+                layout=self.layout,
+                style=self.style,
+            )
+        
         return ipw.VBox([
+            ipw.HBox([self.init_cycles, self.prod_cycles]),
+            self.ff,
             self.He,
             ipw.HBox([self.cellnx, self.cellny, self.cellnz]),
         ])
@@ -203,14 +231,14 @@ class IsothermSettings():
                 "GeneralSettings":
                 {
                 "SimulationType"                   : "MonteCarlo",
-                "NumberOfCycles"                   : 4000,   # 50000
-                "NumberOfInitializationCycles"     : 2000,   # 20000
+                "NumberOfCycles"                   : self.prod_cycles.value,  
+                "NumberOfInitializationCycles"     : self.init_cycles.value,   # 20000
 
                 "PrintEvery"                       : 2000,
 
                 "ChargeMethod"                     : "Ewald",
                 "CutOff"                           : 12.0,
-                "Forcefield"                       : "GenericZeolites",
+                "Forcefield"                       : "{}".format(self.ff.value),
                 "EwaldPrecision"                   : 1e-6,
 
                 "Framework"                        : 0,
