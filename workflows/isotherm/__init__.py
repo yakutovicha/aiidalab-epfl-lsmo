@@ -13,6 +13,8 @@ from aiida.orm.data.base import Bool, Str
 from aiida.orm.code import Code
 #from aiida.orm
 RaspaCalculation = CalculationFactory('raspa')
+ZeoppCalculation = CalculationFactory('zeopp.network')
+
 
 import matplotlib.pyplot as plt
 
@@ -35,7 +37,8 @@ class Isotherm(WorkChain):
         spec.input("parameters", valid_type=ParameterData, required=True)
         spec.input("pressures", valid_type=ArrayData, required=True)
         spec.input("structure", valid_type=CifData, required=True)
-        spec.input("codename", valid_type=Str, required=True)
+        spec.input("zeopp_codename", valid_type=Str, required=True)
+        spec.input("raspa_codename", valid_type=Str, required=True)
         spec.input("_interactive", valid_type=bool, required=False, default=False)
         
         # The outline describes the business logic that defines
@@ -43,6 +46,8 @@ class Isotherm(WorkChain):
         # what conditions. Each `cls.method` is implemented below
         spec.outline(
             cls.init,
+            cls.run_zeopp,
+            cls.parse_zeopp,
             while_(cls.should_run_raspa)(
                 cls.run_raspa,
                 cls.parse_raspa,
@@ -88,6 +93,34 @@ class Isotherm(WorkChain):
         """
         return self.ctx.p < len(self.ctx.pressures)
 
+    def run_zeopp(self):
+        """
+        This is the main function that will perform a raspa
+        calculation for the current pressure
+        """
+
+        NetworkParameters = DataFactory('zeopp.parameters')
+        # Create the input dictionary
+        inputs = {
+            'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
+            'structure'  : self.inputs.structure,
+            'parameters' : NetworkParameters(dict={'volpo': [1.4, 1.4, 50000],}),
+            '_options'   : self.ctx.options,
+        }
+
+        # Create the calculation process and launch it
+        self.report("Running zeo++ calculation")
+        process = ZeoppCalculation.process()
+        future  = submit(process, **inputs)
+
+        return ToContext(zeopp=Outputs(future))
+
+    def parse_zeopp(self):
+        """
+        Extract the pressure and loading average of the last completed raspa calculation
+        """
+        self.ctx.parameters['GeneralSettings']['HeliumVoidFraction'] = self.ctx.zeopp["pore_volume_volpo"].dict.POAV_Volume_fraction
+
     def run_raspa(self):
         """
         This is the main function that will perform a raspa
@@ -101,7 +134,7 @@ class Isotherm(WorkChain):
 
         # Create the input dictionary
         inputs = {
-            'code'       : Code.get_from_string(self.inputs.codename.value),
+            'code'       : Code.get_from_string(self.inputs.raspa_codename.value),
             'structure'  : self.inputs.structure,
             'parameters' : ParameterData(dict=self.ctx.parameters),
             '_options'   : self.ctx.options,
@@ -114,7 +147,6 @@ class Isotherm(WorkChain):
 
         self.ctx.p += 1
         self.ctx.prev_pk = future.pid
-        #print(future)
 
         return ToContext(raspa=Outputs(future))
 
@@ -160,7 +192,8 @@ class IsothermSettings():
         self.layout = ipw.Layout(width="400px")
         self.style = {"description_width":"180px"}
 
-    def settings_panel(self):   
+    def settings_panel(self):
+        """
         self.He=ipw.FloatText(
             value=0.347,
             step=0.01,
@@ -169,7 +202,7 @@ class IsothermSettings():
             layout=ipw.Layout(width="280px"),
             style = self.style
         )
-
+        """
         self.cellnx = ipw.IntText(
             value=1,
             description='Number of unit cells: X',
@@ -222,7 +255,7 @@ class IsothermSettings():
         return ipw.VBox([
             ipw.HBox([self.init_cycles, self.prod_cycles]),
             self.ff,
-            self.He,
+            #self.He,
             ipw.HBox([self.cellnx, self.cellny, self.cellnz]),
         ])
 
@@ -243,7 +276,7 @@ class IsothermSettings():
 
                 "Framework"                        : 0,
                 "UnitCells"                        : "{} {} {}".format(self.cellnx.value, self.cellny.value, self.cellnz.value),
-                "HeliumVoidFraction"               : self.He.value,
+                "HeliumVoidFraction"               : 0.0,
 
                 "ExternalTemperature"              : 298.0,
                 "ExternalPressure"                 : 58e4,
