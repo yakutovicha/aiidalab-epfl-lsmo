@@ -192,6 +192,7 @@ class IsothermSettings():
         self.layout = ipw.Layout(width="400px")
         self.style = {"description_width":"180px"}
 
+
     def settings_panel(self):
         """
         self.He=ipw.FloatText(
@@ -202,7 +203,7 @@ class IsothermSettings():
             layout=ipw.Layout(width="280px"),
             style = self.style
         )
-        """
+        
         self.cellnx = ipw.IntText(
             value=1,
             description='Number of unit cells: X',
@@ -225,6 +226,15 @@ class IsothermSettings():
             disabled=False,
             layout=ipw.Layout(width="100px"),
             style = {"description_width":"40px"}
+        )
+        """
+        self.cutoff = ipw.FloatText(
+            value=12.0,
+            step=0.2,
+            description='Cutoff [A]:',
+            disabled=False,
+            layout=self.layout,
+            style=self.style,
         )
         
         self.ff = ipw.Dropdown(
@@ -256,10 +266,46 @@ class IsothermSettings():
             ipw.HBox([self.init_cycles, self.prod_cycles]),
             self.ff,
             #self.He,
-            ipw.HBox([self.cellnx, self.cellny, self.cellnz]),
+            self.cutoff,
         ])
 
-    def return_parameters (self):
+
+    def return_parameters (self, cif):
+        from math import cos, sin, sqrt, pi
+        import numpy as np
+        deg2rad=pi/180.
+
+        
+        a = float(cif.values['image0']['_cell_length_a'])
+        b = float(cif.values['image0']['_cell_length_b'])
+        c = float(cif.values['image0']['_cell_length_c'])
+        
+        alpha = float(cif.values['image0']['_cell_angle_alpha'])*deg2rad
+        beta  = float(cif.values['image0']['_cell_angle_beta'])*deg2rad
+        gamma = float(cif.values['image0']['_cell_angle_gamma'])*deg2rad
+        
+        
+        # this code makes sure that the structure is replicated enough times in x, y, z direction
+        # in order to be compatible with the cutoff value
+        
+        # first step is computing cell parameters according to  https://en.wikipedia.org/wiki/Fractional_coordinates
+        v = sqrt(1-cos(alpha)**2-cos(beta)**2-
+                 cos(gamma)**2+2*cos(alpha)*cos(beta)*cos(gamma))
+        cell=np.zeros((3,3))
+        cell[0,:] = [a, 0, 0]
+        cell[1,:] = [b*cos(gamma), b*sin(gamma),0]
+        cell[2,:] = [c*cos(beta), c*(cos(alpha)-cos(beta)*cos(gamma))/(sin(gamma)),c*v
+                   /sin(gamma)]
+        cell=np.array(cell)
+        
+        # diagonalizing the cell matrix
+        diag = np.diag(cell)
+        # and computing nx, ny and nz
+        nx, ny, nz = tuple(int(i) for i in np.ceil(self.cutoff.value/diag*2.))
+            
+        
+        
+
         params ={
                 "GeneralSettings":
                 {
@@ -275,7 +321,7 @@ class IsothermSettings():
                 "EwaldPrecision"                   : 1e-6,
 
                 "Framework"                        : 0,
-                "UnitCells"                        : "{} {} {}".format(self.cellnx.value, self.cellny.value, self.cellnz.value),
+                "UnitCells"                        : "{} {} {}".format(nx, ny, nz),
                 "HeliumVoidFraction"               : 0.0,
 
                 "ExternalTemperature"              : 298.0,
