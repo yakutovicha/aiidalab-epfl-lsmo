@@ -1,7 +1,7 @@
 from aiida.orm import CalculationFactory, DataFactory
 
 
-from aiida.work.workchain import WorkChain, ToContext, while_, Outputs
+from aiida.work.workchain import WorkChain, ToContext, if_, while_, Outputs
 from aiida.work.run import run, submit
 
 
@@ -34,6 +34,7 @@ class Isotherm(WorkChain):
         super(Isotherm, cls).define(spec)
         
         # First we define the inputs, specifying the type we expect
+        spec.input("probe_molecule", valid_type=ParameterData, required=True)
         spec.input("parameters", valid_type=ParameterData, required=True)
         spec.input("pressures", valid_type=ArrayData, required=True)
         spec.input("structure", valid_type=CifData, required=True)
@@ -46,8 +47,12 @@ class Isotherm(WorkChain):
         # what conditions. Each `cls.method` is implemented below
         spec.outline(
             cls.init,
-            cls.run_zeopp,
-            cls.parse_zeopp,
+            cls.run_volpro_zeopp,
+            cls.parse_volpro_zeopp,
+            if_(cls.should_run_block_zeopp)(
+                cls.run_block_zeopp,
+                cls.parse_block_zeopp,
+            ),
             while_(cls.should_run_raspa)(
                 cls.run_raspa,
                 cls.parse_raspa,
@@ -92,8 +97,8 @@ class Isotherm(WorkChain):
         the total number of pressures we want to compute
         """
         return self.ctx.p < len(self.ctx.pressures)
-
-    def run_zeopp(self):
+       
+    def run_volpro_zeopp(self):
         """
         This is the main function that will perform a raspa
         calculation for the current pressure
@@ -101,25 +106,64 @@ class Isotherm(WorkChain):
 
         NetworkParameters = DataFactory('zeopp.parameters')
         # Create the input dictionary
+        sigma = self.inputs.probe_molecule.get_dict()['sigma']
         inputs = {
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
             'structure'  : self.inputs.structure,
-            'parameters' : NetworkParameters(dict={'volpo': [1.4, 1.4, 50000],}),
+            'parameters' : NetworkParameters(dict={'volpo': [sigma, sigma, 100000],}),
             '_options'   : self.ctx.options,
         }
 
         # Create the calculation process and launch it
-        self.report("Running zeo++ calculation")
+        self.report("Running zeo++ volpro calculation")
         process = ZeoppCalculation.process()
         future  = submit(process, **inputs)
 
         return ToContext(zeopp=Outputs(future))
 
-    def parse_zeopp(self):
+    def parse_volpro_zeopp(self):
         """
         Extract the pressure and loading average of the last completed raspa calculation
         """
         self.ctx.parameters['GeneralSettings']['HeliumVoidFraction'] = self.ctx.zeopp["pore_volume_volpo"].dict.POAV_Volume_fraction
+
+    def should_run_block_zeopp(self):
+        """
+        If the pore non-accessible volume is 0 - there is no need to run
+        """
+        return self.ctx.zeopp["pore_volume_volpo"].dict.PONAV_Volume_fraction != 0
+        
+    def run_block_zeopp(self):
+        """
+        This is the main function that will perform a raspa
+        calculation for the current pressure
+        """
+
+        NetworkParameters = DataFactory('zeopp.parameters')
+        # Create the input dictionary
+        sigma = self.inputs.probe_molecule.get_dict()['sigma']
+        inputs = {
+            'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
+            'structure'  : self.inputs.structure,
+            'parameters' : NetworkParameters(dict={'ha':True, 'block': [sigma, 1000],}),
+            '_options'   : self.ctx.options,
+        }
+
+        # Create the calculation process and launch it
+        self.report("Running zeo++ block volume calculation")
+        process = ZeoppCalculation.process()
+        future  = submit(process, **inputs)
+        
+        self.ctx.block_pk = future.pid
+
+        return ToContext(zeopp=Outputs(future))
+    
+    def parse_block_zeopp(self):
+        """
+        Extract the pressure and loading average of the last completed raspa calculation
+        """
+        self.ctx.parameters['Component'][0]['BlockPockets'] = True
+        self.ctx.parameters['Component'][0]['BlockPocketsPk'] = self.ctx.block_pk
 
     def run_raspa(self):
         """
@@ -130,7 +174,7 @@ class Isotherm(WorkChain):
         self.ctx.parameters['GeneralSettings']['ExternalPressure'] = pressure
         if self.ctx.prev_pk is not None:
             self.ctx.parameters['GeneralSettings']['RestartFile'] = True
-            self.ctx.parameters['restart_pk'] = self.ctx.prev_pk
+            self.ctx.parameters['GeneralSettings']['RestartFilePk'] = self.ctx.prev_pk
 
         # Create the input dictionary
         inputs = {
@@ -192,42 +236,7 @@ class IsothermSettings():
         self.layout = ipw.Layout(width="400px")
         self.style = {"description_width":"180px"}
 
-
     def settings_panel(self):
-        """
-        self.He=ipw.FloatText(
-            value=0.347,
-            step=0.01,
-            description='Helium Void Fraction:',
-            disabled=False,
-            layout=ipw.Layout(width="280px"),
-            style = self.style
-        )
-        
-        self.cellnx = ipw.IntText(
-            value=1,
-            description='Number of unit cells: X',
-            disabled=False,
-            layout=ipw.Layout(width="240px"),
-            style = self.style
-        )
-
-        self.cellny = ipw.IntText(
-            value=1,
-            description='Y',
-            disabled=False,
-            layout=ipw.Layout(width="100px"),
-            style = {"description_width":"40px"}
-        )
-
-        self.cellnz = ipw.IntText(
-            value=1,
-            description='Z',
-            disabled=False,
-            layout=ipw.Layout(width="100px"),
-            style = {"description_width":"40px"}
-        )
-        """
         self.cutoff = ipw.FloatText(
             value=12.0,
             step=0.2,
@@ -238,9 +247,17 @@ class IsothermSettings():
         )
         
         self.ff = ipw.Dropdown(
-            options=('GenericZeolites', 'tcc', "TraPPE", "GenericMOFs", "GarciaPerez2016" ),
+            options=('LSMO_DREIDING-TraPPE', 'LSMO_UFF-TraPPE', 'tcc'),
             value='tcc',
             description='Select forcefield:',
+            layout=self.layout,
+            style=self.style,
+            )
+        mol_opt = [('methane', {'molecule':'methane','sigma': 1.86}), ("Carbon dioxide", {'molecule':'CO2','sigma': 1.525}), ("Nitrogen", {'molecule':'N2', 'sigma': 1.86})]
+        self.probe_molecule = ipw.Dropdown(
+            options=mol_opt,
+            #value=0,
+            description='Select molecule:',
             layout=self.layout,
             style=self.style,
             )
@@ -261,11 +278,11 @@ class IsothermSettings():
                 layout=self.layout,
                 style=self.style,
             )
-        
+
         return ipw.VBox([
             ipw.HBox([self.init_cycles, self.prod_cycles]),
             self.ff,
-            #self.He,
+            self.probe_molecule,
             self.cutoff,
         ])
 
@@ -275,14 +292,15 @@ class IsothermSettings():
         import numpy as np
         deg2rad=pi/180.
 
+        struct=cif.values.dictionary.itervalues().next()
         
-        a = float(cif.values['image0']['_cell_length_a'])
-        b = float(cif.values['image0']['_cell_length_b'])
-        c = float(cif.values['image0']['_cell_length_c'])
+        a = float(struct['_cell_length_a'])
+        b = float(struct['_cell_length_b'])
+        c = float(struct['_cell_length_c'])
         
-        alpha = float(cif.values['image0']['_cell_angle_alpha'])*deg2rad
-        beta  = float(cif.values['image0']['_cell_angle_beta'])*deg2rad
-        gamma = float(cif.values['image0']['_cell_angle_gamma'])*deg2rad
+        alpha = float(struct['_cell_angle_alpha'])*deg2rad
+        beta  = float(struct['_cell_angle_beta'])*deg2rad
+        gamma = float(struct['_cell_angle_gamma'])*deg2rad
         
         
         # this code makes sure that the structure is replicated enough times in x, y, z direction
@@ -329,7 +347,7 @@ class IsothermSettings():
                 },
                 "Component":
                 [{
-                "MoleculeName"                     : "methane",
+                "MoleculeName"                     : "{}".format(self.probe_molecule.value['molecule']),
                 "MoleculeDefinition"               : "TraPPE",
                 "TranslationProbability"           : 0.5,
                 "ReinsertionProbability"           : 0.5,
