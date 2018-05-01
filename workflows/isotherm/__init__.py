@@ -34,12 +34,22 @@ class Isotherm(WorkChain):
         super(Isotherm, cls).define(spec)
         
         # First we define the inputs, specifying the type we expect
+        options = {
+            "resources": {
+                "num_machines": 1,
+                "tot_num_mpiprocs": 1,
+                "num_mpiprocs_per_machine": 1,
+            },
+            "max_wallclock_seconds": 30 * 60,
+#            "queue_name":"serial",
+        }
         spec.input("probe_molecule", valid_type=ParameterData, required=True)
         spec.input("parameters", valid_type=ParameterData, required=True)
         spec.input("pressures", valid_type=ArrayData, required=True)
         spec.input("structure", valid_type=CifData, required=True)
         spec.input("zeopp_codename", valid_type=Str, required=True)
         spec.input("raspa_codename", valid_type=Str, required=True)
+        spec.input("_options", valid_type=dict, required=False, default=options)
         spec.input("_interactive", valid_type=bool, required=False, default=False)
         
         # The outline describes the business logic that defines
@@ -73,15 +83,7 @@ class Isotherm(WorkChain):
         self.ctx.prev_pk = None
         self.ctx.pressures = self.inputs.pressures.get_array("pressures")
         self.ctx.result = []
-        self.ctx.options = {
-            "resources": {
-                "num_machines": 1,
-                "tot_num_mpiprocs": 1,
-                "num_mpiprocs_per_machine": 1,
-            },
-            "max_wallclock_seconds": 30 * 60,
-#            "queue_name":"serial",
-        }
+
         self.ctx.parameters = self.inputs.parameters.get_dict()
         if self.inputs._interactive == True:
             self.fig, self.ax = plt.subplots(1,1)
@@ -111,7 +113,7 @@ class Isotherm(WorkChain):
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
             'structure'  : self.inputs.structure,
             'parameters' : NetworkParameters(dict={'volpo': [sigma, sigma, 100000],}),
-            '_options'   : self.ctx.options,
+            '_options'   : self.inputs._options,
         }
 
         # Create the calculation process and launch it
@@ -146,7 +148,7 @@ class Isotherm(WorkChain):
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
             'structure'  : self.inputs.structure,
             'parameters' : NetworkParameters(dict={'ha':True, 'block': [sigma, 1000],}),
-            '_options'   : self.ctx.options,
+            '_options'   : self.inputs._options,
         }
 
         # Create the calculation process and launch it
@@ -181,7 +183,7 @@ class Isotherm(WorkChain):
             'code'       : Code.get_from_string(self.inputs.raspa_codename.value),
             'structure'  : self.inputs.structure,
             'parameters' : ParameterData(dict=self.ctx.parameters),
-            '_options'   : self.ctx.options,
+            '_options'   : self.inputs._options,
         }
 
         # Create the calculation process and launch it
@@ -224,7 +226,7 @@ class Isotherm(WorkChain):
         self.ax.plot(*zip(*self.ctx.result), marker='o', linestyle='--', color='r')
         self.fig.canvas.draw()
 
-        
+
 import ipywidgets as ipw
 
         
@@ -293,16 +295,15 @@ class IsothermSettings():
         deg2rad=pi/180.
 
         struct=cif.values.dictionary.itervalues().next()
-        
+
         a = float(struct['_cell_length_a'])
         b = float(struct['_cell_length_b'])
         c = float(struct['_cell_length_c'])
-        
+
         alpha = float(struct['_cell_angle_alpha'])*deg2rad
         beta  = float(struct['_cell_angle_beta'])*deg2rad
         gamma = float(struct['_cell_angle_gamma'])*deg2rad
-        
-        
+
         # this code makes sure that the structure is replicated enough times in x, y, z direction
         # in order to be compatible with the cutoff value
         
@@ -315,14 +316,11 @@ class IsothermSettings():
         cell[2,:] = [c*cos(beta), c*(cos(alpha)-cos(beta)*cos(gamma))/(sin(gamma)),c*v
                    /sin(gamma)]
         cell=np.array(cell)
-        
+
         # diagonalizing the cell matrix
         diag = np.diag(cell)
         # and computing nx, ny and nz
         nx, ny, nz = tuple(int(i) for i in np.ceil(self.cutoff.value/diag*2.))
-            
-        
-        
 
         params ={
                 "GeneralSettings":
@@ -357,3 +355,4 @@ class IsothermSettings():
                 }
         return params
 
+# EOF
