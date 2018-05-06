@@ -63,6 +63,7 @@ class Isotherm(WorkChain):
                 cls.run_block_zeopp,
                 cls.parse_block_zeopp,
             ),
+#            cls.run_raspa_henry,
             while_(cls.should_run_raspa)(
                 cls.run_raspa,
                 cls.parse_raspa,
@@ -117,9 +118,9 @@ class Isotherm(WorkChain):
         }
 
         # Create the calculation process and launch it
-        self.report("Running zeo++ volpro calculation")
         process = ZeoppCalculation.process()
         future  = submit(process, **inputs)
+        self.report("pk: {} | Running zeo++ volpro calculation".format(future.pid))
 
         return ToContext(zeopp=Outputs(future))
 
@@ -147,14 +148,14 @@ class Isotherm(WorkChain):
         inputs = {
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
             'structure'  : self.inputs.structure,
-            'parameters' : NetworkParameters(dict={'ha':True, 'block': [sigma, 1000],}),
+            'parameters' : NetworkParameters(dict={'ha':True, 'block': [sigma, 200],}),
             '_options'   : self.inputs._options,
         }
 
         # Create the calculation process and launch it
-        self.report("Running zeo++ block volume calculation")
         process = ZeoppCalculation.process()
         future  = submit(process, **inputs)
+        self.report("pk: {} | Running zeo++ block volume calculation".format(future.pid))
         
         self.ctx.block_pk = future.pid
 
@@ -187,9 +188,9 @@ class Isotherm(WorkChain):
         }
 
         # Create the calculation process and launch it
-        self.report("Running raspa for the pressure {} [bar]".format(pressure/1e5))
         process = RaspaCalculation.process()
         future  = submit(process, **inputs)
+        self.report("pk: {} | Running raspa for the pressure {} [bar]".format(future.pid, pressure/1e5))
 
         self.ctx.p += 1
         self.ctx.prev_pk = future.pid
@@ -219,6 +220,34 @@ class Isotherm(WorkChain):
 
         self.report("Workchain <{}> completed successfully".format(self.calc.pk))
         return
+    def run_raspa_henry(self):
+        """
+        This is the main function that will perform a raspa
+        calculation for the current pressure
+        """
+        parameters = self.inputs.parameters.get_dict()
+        for i, comp in enumerate(parameters['Component']):
+            name = comp['MoleculeName']
+            parameters['Component'][0] = {
+                "MoleculeName"                     : name,
+                "MoleculeDefinition"               : "TraPPE",
+                "WidomProbability"                 : 1.0,
+                "CreateNumberOfMolecules"          : 0,
+            }
+        # Create the input dictionary
+        inputs = {
+            'code'       : Code.get_from_string(self.inputs.raspa_codename.value),
+            'structure'  : self.inputs.structure,
+            'parameters' : ParameterData(dict=parameters),
+            '_options'   : self.inputs._options,
+        }
+
+        # Create the calculation process and launch it
+        process = RaspaCalculation.process()
+        future  = submit(process, **inputs)
+        self.report("pk: {} | Running raspa for the Henry coefficients".format(future.pid))
+
+        return 
 
     def plot_data(self, init=False):
         if self.inputs._interactive == False:
@@ -249,8 +278,8 @@ class IsothermSettings():
         )
         
         self.ff = ipw.Dropdown(
-            options=('LSMO_DREIDING-TraPPE', 'LSMO_UFF-TraPPE', 'tcc'),
-            value='tcc',
+            options=('LSMO_DREIDING-TraPPE', 'LSMO_UFF-TraPPE'),
+            value='LSMO_DREIDING-TraPPE',
             description='Select forcefield:',
             layout=self.layout,
             style=self.style,
