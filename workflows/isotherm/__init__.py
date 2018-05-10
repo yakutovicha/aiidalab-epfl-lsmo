@@ -57,16 +57,16 @@ class Isotherm(WorkChain):
         # what conditions. Each `cls.method` is implemented below
         spec.outline(
             cls.init,
-            cls.run_volpro_zeopp,
-            cls.parse_volpro_zeopp,
+            cls.run_geom_zeopp,
+            cls.parse_geom_zeopp,
             if_(cls.should_run_block_zeopp)(
                 cls.run_block_zeopp,
                 cls.parse_block_zeopp,
             ),
-#            cls.run_raspa_henry,
-            while_(cls.should_run_raspa)(
-                cls.run_raspa,
-                cls.parse_raspa,
+            cls.run_henry_raspa,
+            while_(cls.should_run_loading_raspa)(
+                cls.run_loading_raspa,
+                cls.parse_loading_raspa,
             ),
             cls.return_result,
         )
@@ -90,18 +90,8 @@ class Isotherm(WorkChain):
             self.fig, self.ax = plt.subplots(1,1)
             self.ax.set_xlabel(u"Pressure [bar]")
             self.ax.set_ylabel(u"Loading average [molecules/unit cell]")
-
-
-    def should_run_raspa(self):
-        """
-        This is the main condition of the while loop, as defined
-        in the outline of the Workchain. We only run another
-        raspa calculation if the current iteration is smaller than
-        the total number of pressures we want to compute
-        """
-        return self.ctx.p < len(self.ctx.pressures)
        
-    def run_volpro_zeopp(self):
+    def run_geom_zeopp(self):
         """
         This is the main function that will perform a raspa
         calculation for the current pressure
@@ -110,21 +100,28 @@ class Isotherm(WorkChain):
         NetworkParameters = DataFactory('zeopp.parameters')
         # Create the input dictionary
         sigma = self.inputs.probe_molecule.get_dict()['sigma']
+        params = {
+            'ha': True,
+            'res': True,
+            'sa': [sigma, sigma, 100000],
+            'volpo': [sigma, sigma, 100000],
+        }
         inputs = {
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
             'structure'  : self.inputs.structure,
-            'parameters' : NetworkParameters(dict={'volpo': [sigma, sigma, 100000],}),
+            'parameters' : NetworkParameters(dict=params),
             '_options'   : self.inputs._options,
+            '_label'     : "run_geom_zeopp",
         }
 
         # Create the calculation process and launch it
         process = ZeoppCalculation.process()
         future  = submit(process, **inputs)
-        self.report("pk: {} | Running zeo++ volpro calculation".format(future.pid))
+        self.report("pk: {} | Running geometry analysis with zeo++".format(future.pid))
 
         return ToContext(zeopp=Outputs(future))
 
-    def parse_volpro_zeopp(self):
+    def parse_geom_zeopp(self):
         """
         Extract the pressure and loading average of the last completed raspa calculation
         """
@@ -145,11 +142,17 @@ class Isotherm(WorkChain):
         NetworkParameters = DataFactory('zeopp.parameters')
         # Create the input dictionary
         sigma = self.inputs.probe_molecule.get_dict()['sigma']
+        params = {
+            'ha':True,
+            'block': [sigma, 200],
+        }
         inputs = {
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
             'structure'  : self.inputs.structure,
-            'parameters' : NetworkParameters(dict={'ha':True, 'block': [sigma, 200],}),
+            'parameters' : NetworkParameters(dict=params),
             '_options'   : self.inputs._options,
+            '_label'     : "run_block_zeopp",
+
         }
 
         # Create the calculation process and launch it
@@ -168,7 +171,16 @@ class Isotherm(WorkChain):
         self.ctx.parameters['Component'][0]['BlockPockets'] = True
         self.ctx.parameters['Component'][0]['BlockPocketsPk'] = self.ctx.block_pk
 
-    def run_raspa(self):
+    def should_run_loading_raspa(self):
+        """
+        This is the main condition of the while loop, as defined
+        in the outline of the Workchain. We only run another
+        raspa calculation if the current iteration is smaller than
+        the total number of pressures we want to compute
+        """
+        return self.ctx.p < len(self.ctx.pressures)
+
+    def run_loading_raspa(self):
         """
         This is the main function that will perform a raspa
         calculation for the current pressure
@@ -185,6 +197,7 @@ class Isotherm(WorkChain):
             'structure'  : self.inputs.structure,
             'parameters' : ParameterData(dict=self.ctx.parameters),
             '_options'   : self.inputs._options,
+            '_label'     : "run_loading_raspa",
         }
 
         # Create the calculation process and launch it
@@ -197,7 +210,7 @@ class Isotherm(WorkChain):
 
         return ToContext(raspa=Outputs(future))
 
-    def parse_raspa(self):
+    def parse_loading_raspa(self):
         """
         Extract the pressure and loading average of the last completed raspa calculation
         """
@@ -220,7 +233,7 @@ class Isotherm(WorkChain):
 
         self.report("Workchain <{}> completed successfully".format(self.calc.pk))
         return
-    def run_raspa_henry(self):
+    def run_henry_raspa(self):
         """
         This is the main function that will perform a raspa
         calculation for the current pressure
@@ -240,6 +253,7 @@ class Isotherm(WorkChain):
             'structure'  : self.inputs.structure,
             'parameters' : ParameterData(dict=parameters),
             '_options'   : self.inputs._options,
+            '_label'     : "run_henry_raspa",
         }
 
         # Create the calculation process and launch it
