@@ -65,8 +65,16 @@ class StructureBrowser(ipw.VBox):
         else:
             self.results = ipw.Dropdown(layout=layout)
 
+
+        self.found = ipw.HTML("", description="found:")
+        self.selected = ipw.HTML("", description="selected:")
+
         self.search()
-        super(StructureBrowser, self).__init__([box, hr, self.results])
+
+        if multi:
+            super(StructureBrowser, self).__init__([box, hr, self.results,ipw.HBox([self.found, self.selected])]) 
+        else:
+            super(StructureBrowser, self).__init__([box, hr, self.results])
     
     
     def preprocess(self):
@@ -133,8 +141,11 @@ class StructureBrowser(ipw.VBox):
         
         c = len(matches)
         options = OrderedDict()
-        if not self.multi:
+        if self.multi:
+            self.found.value = "{}".format(c)
+        else:
             options["Select a Structure (%d found)"%c] = False
+
         for n in matches:
             label  = "PK: %d" % n.pk
             label += " | " + n.ctime.strftime("%Y-%m-%d %H:%M")
