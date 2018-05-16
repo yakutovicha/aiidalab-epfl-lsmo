@@ -41,6 +41,7 @@ class Isotherm(WorkChain):
                 "num_mpiprocs_per_machine": 1,
             },
             "max_wallclock_seconds": 30 * 60,
+            "max_memory_kb": 2e6,
 #            "queue_name":"serial",
         }
         spec.input("probe_molecule", valid_type=ParameterData, required=True)
