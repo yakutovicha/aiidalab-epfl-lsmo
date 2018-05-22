@@ -240,6 +240,7 @@ class Isotherm(WorkChain):
         calculation for the current pressure
         """
         parameters = self.inputs.parameters.get_dict()
+        parameters['GeneralSettings'].pop('ExternalPressure')
         for i, comp in enumerate(parameters['Component']):
             name = comp['MoleculeName']
             parameters['Component'][0] = {
