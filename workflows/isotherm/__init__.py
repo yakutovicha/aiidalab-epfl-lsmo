@@ -1,22 +1,38 @@
 from aiida.orm import CalculationFactory, DataFactory
 
+from aiida.orm import load_node
 
 from aiida.work.workchain import WorkChain, ToContext, if_, while_, Outputs
 from aiida.work.run import run, submit
 
+from aiida.work import workfunction as wf
 
 from aiida.orm.data.parameter import ParameterData
 from aiida.orm.data.array import ArrayData
 from aiida.orm.data.cif import CifData
+from aiida.orm.data.structure import StructureData
 from aiida.orm.data.base import Bool, Str
 
 from aiida.orm.code import Code
 #from aiida.orm
+Cp2kCalculation = CalculationFactory('cp2k')
+DdecCalculation = CalculationFactory('ddec')
 RaspaCalculation = CalculationFactory('raspa')
 ZeoppCalculation = CalculationFactory('zeopp.network')
 
 
 import matplotlib.pyplot as plt
+
+
+@wf
+def from_cif_to_structuredata(cif):
+    """
+    Helper function that converts CifData object into StrucutreData
+    """
+    a = cif.get_ase()
+    return StructureData(ase=a)
+    
+    
 
 
 class Isotherm(WorkChain):
@@ -41,23 +57,33 @@ class Isotherm(WorkChain):
                 "num_mpiprocs_per_machine": 1,
             },
             "max_wallclock_seconds": 30 * 60,
-            "max_memory_kb": 2e6,
-#            "queue_name":"serial",
+            "withmpi": False,
+
         }
         spec.input("probe_molecule", valid_type=ParameterData, required=True)
-        spec.input("parameters", valid_type=ParameterData, required=True)
+#        spec.input("cp2k_parameters", valid_type=ParameterData, required=True)
+#        spec.input("ddec_parameters", valid_type=ParameterData, required=True)
+        spec.input("raspa_parameters", valid_type=ParameterData, required=True)
         spec.input("pressures", valid_type=ArrayData, required=True)
         spec.input("structure", valid_type=CifData, required=True)
+        #spec.input("cp2k_codename", valid_type=Str, required=True)
+        #spec.input("ddec_codename", valid_type=Str, required=True)
         spec.input("zeopp_codename", valid_type=Str, required=True)
         spec.input("raspa_codename", valid_type=Str, required=True)
         spec.input("_options", valid_type=dict, required=False, default=options)
         spec.input("_interactive", valid_type=bool, required=False, default=False)
+        spec.input("_usecharges", valid_type=bool, required=False, default=True)
         
         # The outline describes the business logic that defines
         # which steps are executed in what order and based on
         # what conditions. Each `cls.method` is implemented below
         spec.outline(
             cls.init,
+            if_(cls.should_use_charges)(
+                cls.run_cp2k_charge_density,
+                cls.run_ddec_point_charges,
+                cls.parse_ddec_point_charges,
+            ),
             cls.run_geom_zeopp,
             cls.parse_geom_zeopp,
             if_(cls.should_run_block_zeopp)(
@@ -85,12 +111,78 @@ class Isotherm(WorkChain):
         self.ctx.prev_pk = None
         self.ctx.pressures = self.inputs.pressures.get_array("pressures")
         self.ctx.result = []
+        
+        self.ctx.processed_structure = self.inputs.structure
 
-        self.ctx.parameters = self.inputs.parameters.get_dict()
+        self.ctx.raspa_parameters = self.inputs.raspa_parameters.get_dict()
+        if self.inputs._usecharges:
+            self.ctx.raspa_parameters['GeneralSettings']['UseChargesFromCIFFile'] = "yes"
+
         if self.inputs._interactive == True:
             self.fig, self.ax = plt.subplots(1,1)
             self.ax.set_xlabel(u"Pressure [bar]")
             self.ax.set_ylabel(u"Loading average [molecules/unit cell]")
+
+    def should_use_charges(self):
+        """
+        Whether it is needed to employ charges
+        """
+        return self.inputs._usecharges
+
+    def run_cp2k_charge_density(self):
+        """
+        Compute the charge-density of a structure that can be later used for extracting ddec point charges.
+        """
+        options = {
+            "resources": {
+                "num_machines": 4,
+                "num_mpiprocs_per_machine": 12,
+            },
+            "max_wallclock_seconds": 3 * 60 * 60,
+        }
+
+        inputs = {
+            'code'       : Code.get_from_string('cp2k_6.0_18265@daint-s761'), # self.inputs.cp2k_codename.value
+            'structure'  : from_cif_to_structuredata(self.ctx.processed_structure), # 
+            'parameters' : ParameterData(dict=self.return_cp2k_parameters()),
+            '_options'   : options,
+            '_label'     : "run_chargedensity_cp2k",
+        }
+
+        # Create the calculation process and launch it
+        process = Cp2kCalculation.process()
+        future  = submit(process, **inputs)
+        self.report("pk: {} | Running cp2k to compute the charge-density")
+        self.ctx.cp2k_pid=future.pid
+        return ToContext(cp2k=Outputs(future))
+
+    def run_ddec_point_charges(self):
+        """
+        Compute ddec point charges from precomputed charge-density.
+        """
+        cp2k_calc = load_node(self.ctx.cp2k_pid)
+        options = self.inputs._options
+        #options['prepend_text'] = "export OMP_NUM_THREADS=12"
+        inputs = {
+            'code'       : Code.get_from_string('ddec@daint-s761'),
+            'parameters' : ParameterData(dict=self.return_ddec_parameters()),
+            'electronic_calc_folder': cp2k_calc.out.remote_folder,
+            '_options'   : options,
+            '_label'     : "run_pointcharges_ddec",
+        }
+        # Create the calculation process and launch it
+        process = DdecCalculation.process()
+        future  = submit(process, **inputs)
+        self.report("pk: {} | Running ddec to compute point charges based on the charge-density")
+        self.ctx.ddec_pid=future.pid
+        return ToContext(ddec=Outputs(future))
+    
+    def parse_ddec_point_charges(self):
+        """
+        Extract a recently created cif file that contains point charges
+        """
+        ddec_calc = load_node(self.ctx.ddec_pid)
+        self.ctx.processed_structure = ddec_calc.out.structure
        
     def run_geom_zeopp(self):
         """
@@ -109,7 +201,7 @@ class Isotherm(WorkChain):
         }
         inputs = {
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
-            'structure'  : self.inputs.structure,
+            'structure'  : self.ctx.processed_structure,
             'parameters' : NetworkParameters(dict=params),
             '_options'   : self.inputs._options,
             '_label'     : "run_geom_zeopp",
@@ -126,7 +218,8 @@ class Isotherm(WorkChain):
         """
         Extract the pressure and loading average of the last completed raspa calculation
         """
-        self.ctx.parameters['GeneralSettings']['HeliumVoidFraction'] = self.ctx.zeopp["pore_volume_volpo"].dict.POAV_Volume_fraction
+        self.ctx.raspa_parameters['GeneralSettings']['HeliumVoidFraction'] = \
+        self.ctx.zeopp["pore_volume_volpo"].dict.POAV_Volume_fraction
 
     def should_run_block_zeopp(self):
         """
@@ -149,7 +242,7 @@ class Isotherm(WorkChain):
         }
         inputs = {
             'code'       : Code.get_from_string(self.inputs.zeopp_codename.value),
-            'structure'  : self.inputs.structure,
+            'structure'  : self.ctx.processed_structure,
             'parameters' : NetworkParameters(dict=params),
             '_options'   : self.inputs._options,
             '_label'     : "run_block_zeopp",
@@ -169,8 +262,8 @@ class Isotherm(WorkChain):
         """
         Extract the pressure and loading average of the last completed raspa calculation
         """
-        self.ctx.parameters['Component'][0]['BlockPockets'] = True
-        self.ctx.parameters['Component'][0]['BlockPocketsPk'] = self.ctx.block_pk
+        self.ctx.raspa_parameters['Component'][0]['BlockPockets'] = True
+        self.ctx.raspa_parameters['Component'][0]['BlockPocketsPk'] = self.ctx.block_pk
 
     def should_run_loading_raspa(self):
         """
@@ -187,16 +280,16 @@ class Isotherm(WorkChain):
         calculation for the current pressure
         """
         pressure = self.ctx.pressures[self.ctx.p]
-        self.ctx.parameters['GeneralSettings']['ExternalPressure'] = pressure
+        self.ctx.raspa_parameters['GeneralSettings']['ExternalPressure'] = pressure
         if self.ctx.prev_pk is not None:
-            self.ctx.parameters['GeneralSettings']['RestartFile'] = True
-            self.ctx.parameters['GeneralSettings']['RestartFilePk'] = self.ctx.prev_pk
+            self.ctx.raspa_parameters['GeneralSettings']['RestartFile'] = True
+            self.ctx.raspa_parameters['GeneralSettings']['RestartFilePk'] = self.ctx.prev_pk
 
         # Create the input dictionary
         inputs = {
             'code'       : Code.get_from_string(self.inputs.raspa_codename.value),
-            'structure'  : self.inputs.structure,
-            'parameters' : ParameterData(dict=self.ctx.parameters),
+            'structure'  : self.ctx.processed_structure,
+            'parameters' : ParameterData(dict=self.ctx.raspa_parameters),
             '_options'   : self.inputs._options,
             '_label'     : "run_loading_raspa",
         }
@@ -215,7 +308,7 @@ class Isotherm(WorkChain):
         """
         Extract the pressure and loading average of the last completed raspa calculation
         """
-        pressure = self.ctx.parameters['GeneralSettings']['ExternalPressure']/1e5
+        pressure = self.ctx.raspa_parameters['GeneralSettings']['ExternalPressure']/1e5
         loading_average = self.ctx.raspa["component_0"].dict.loading_absolute_average
         self.ctx.result.append((pressure, loading_average))        
         self.plot_data()
@@ -239,11 +332,11 @@ class Isotherm(WorkChain):
         This is the main function that will perform a raspa
         calculation for the current pressure
         """
-        parameters = self.inputs.parameters.get_dict()
-        parameters['GeneralSettings'].pop('ExternalPressure')
-        for i, comp in enumerate(parameters['Component']):
+        raspa_parameters = self.inputs.raspa_parameters.get_dict()
+        raspa_parameters['GeneralSettings'].pop('ExternalPressure')
+        for i, comp in enumerate(raspa_parameters['Component']):
             name = comp['MoleculeName']
-            parameters['Component'][0] = {
+            raspa_parameters['Component'][0] = {
                 "MoleculeName"                     : name,
                 "MoleculeDefinition"               : "TraPPE",
                 "WidomProbability"                 : 1.0,
@@ -252,8 +345,8 @@ class Isotherm(WorkChain):
         # Create the input dictionary
         inputs = {
             'code'       : Code.get_from_string(self.inputs.raspa_codename.value),
-            'structure'  : self.inputs.structure,
-            'parameters' : ParameterData(dict=parameters),
+            'structure'  : self.ctx.processed_structure,
+            'parameters' : ParameterData(dict=raspa_parameters),
             '_options'   : self.inputs._options,
             '_label'     : "run_henry_raspa",
         }
@@ -271,6 +364,143 @@ class Isotherm(WorkChain):
         self.ax.plot(*zip(*self.ctx.result), marker='o', linestyle='--', color='r')
         self.fig.canvas.draw()
 
+    def return_ddec_parameters (self, atomic_densities="/scratch/snx3000/ongari/atomic_densities/"):
+        
+        params = {
+            "net charge": 0.0,
+            "charge type": "DDEC6",
+            "periodicity along A, B, and C vectors" : [True, True, True,],
+            "compute BOs" : False,
+            "atomic densities directory complete path" : atomic_densities,
+            "input filename" : "valence_density",
+            "number of core electrons":[
+                "1  0",
+                "2  0",
+                "3  0",
+                "4  0",
+                "5  2",
+                "6  2",
+                "7  2",
+                "8  2",
+                "9  2",
+                "10 2",
+                "11 2",
+                "12 2",
+                "13 10",
+                "14 10",
+                "15 10",
+                "16 10",
+                "17 10",
+                "18 10",
+                "19 10",
+                "20 10",
+                "21 10",
+                "22 10",
+                "23 10",
+                "24 10",
+                "25 10",
+                "26 10",
+                "27 10",
+                "28 10",
+                "29 18",
+                "30 18",
+                "35 28",
+                "53 46",
+                ]
+        }
+        return params
+
+    def return_cp2k_parameters (self, multiplicity=1):
+        params = {
+            'FORCE_EVAL': {
+                'METHOD': 'Quickstep',
+                'DFT': {
+                    'UKS': multiplicity,
+                    'CHARGE': 0,
+                    'BASIS_SET_FILE_NAME': 'BASIS_MOLOPT',
+                    'POTENTIAL_FILE_NAME': 'GTH_POTENTIALS',
+                    'QS': {
+                        'METHOD':'GPW',
+                    },
+                    'POISSON': {
+                        'PERIODIC': 'XYZ',
+                    },
+                    'MGRID': {
+                        'CUTOFF':     600,
+                        'NGRIDS':       4,
+                        'REL_CUTOFF':  50,
+                    },
+                    'SCF':{
+                        'SCF_GUESS': 'ATOMIC',
+                        'EPS_SCF': 1.0e-6,
+                        'MAX_SCF': 50,
+                        'MAX_ITER_LUMO': 10000,
+                        'OUTER_SCF': {
+                                    'MAX_SCF': 10,
+                                    'EPS_SCF': 1.0e-6,
+                        },
+                        'OT': {
+                                'MINIMIZER': 'CG',
+                                'PRECONDITIONER': 'FULL_ALL',
+                        },
+                    },
+                    'XC': {
+                        'XC_FUNCTIONAL': {
+                            '_': 'PBE',
+                        },
+                    },
+                    'PRINT': {
+                        'E_DENSITY_CUBE': {
+                            'STRIDE': '1 1 1',
+                            },
+                        'MO_CUBES': {
+                            'STRIDE': '1 1 1',
+                            'WRITE_CUBE': 'F',
+                            'NLUMO': 1,
+                            'NHOMO': 1,
+                        },
+                    },
+                },
+                'SUBSYS': {
+                    'KIND': [
+                        {'_': 'H', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Li', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'B', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'N', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'C', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'O', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'F', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Si', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'P', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'S', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Cl', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Ni', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Cu', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Zn', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Br', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'I', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                    ],
+                },
+            },
+        }
+
+        return params
 
 import ipywidgets as ipw
 
@@ -285,7 +515,7 @@ class IsothermSettings():
 
     def settings_panel(self):
         self.cutoff = ipw.FloatText(
-            value=12.0,
+            value=14.0,
             step=0.2,
             description='Cutoff [A]:',
             disabled=False,
@@ -294,13 +524,21 @@ class IsothermSettings():
         )
         
         self.ff = ipw.Dropdown(
-            options=('LSMO_DREIDING-TraPPE', 'LSMO_UFF-TraPPE'),
-            value='LSMO_DREIDING-TraPPE',
+            options=(
+                'GenericMOFs',
+                'LSMO_DREIDING-TraPPE',
+                'LSMO_UFF-TraPPE'
+            ),
+            value='GenericMOFs',
             description='Select forcefield:',
             layout=self.layout,
             style=self.style,
             )
-        mol_opt = [('methane', {'molecule':'methane','sigma': 1.86}), ("Carbon dioxide", {'molecule':'CO2','sigma': 1.525}), ("Nitrogen", {'molecule':'N2', 'sigma': 1.86})]
+        mol_opt = [
+            ("Carbon dioxide", {'molecule':'CO2','sigma': 1.525}),
+            ('methane', {'molecule':'methane','sigma': 1.86}),
+            ("Nitrogen", {'molecule':'N2', 'sigma': 1.86})
+        ]
         self.probe_molecule = ipw.Dropdown(
             options=mol_opt,
             #value=0,
@@ -310,7 +548,7 @@ class IsothermSettings():
             )
 
         self.init_cycles = ipw.IntText(
-                value=2000,
+                value=5000,
                 step=1000,
                 description = "Number of initialization cycles",
                 disabled=False,
@@ -318,7 +556,7 @@ class IsothermSettings():
                 style=self.style,
             )
         self.prod_cycles = ipw.IntText(
-                value=2000,
+                value=5000,
                 step=1000,
                 description = "Number of production cycles",
                 disabled=False,
@@ -333,8 +571,7 @@ class IsothermSettings():
             self.cutoff,
         ])
 
-
-    def return_parameters (self, cif):
+    def return_raspa_parameters (self, cif):
         from math import cos, sin, sqrt, pi
         import numpy as np
         deg2rad=pi/180.
@@ -377,7 +614,8 @@ class IsothermSettings():
                 "PrintEvery"                       : 2000,
 
                 "ChargeMethod"                     : "Ewald",
-                "CutOff"                           : 12.0,
+#                "UseChargesFromCIFFile"            : "yes",
+                "CutOff"                           : 14.0,
                 "Forcefield"                       : "{}".format(self.ff.value),
                 "EwaldPrecision"                   : 1e-6,
 
