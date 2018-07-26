@@ -61,13 +61,13 @@ class Isotherm(WorkChain):
 
         }
         spec.input("probe_molecule", valid_type=ParameterData, required=True)
-#        spec.input("cp2k_parameters", valid_type=ParameterData, required=True)
-#        spec.input("ddec_parameters", valid_type=ParameterData, required=True)
+        spec.input("cp2k_parameters", valid_type=ParameterData, required=True)
+        spec.input("ddec_parameters", valid_type=ParameterData, required=True)
         spec.input("raspa_parameters", valid_type=ParameterData, required=True)
         spec.input("pressures", valid_type=ArrayData, required=True)
         spec.input("structure", valid_type=CifData, required=True)
-        #spec.input("cp2k_codename", valid_type=Str, required=True)
-        #spec.input("ddec_codename", valid_type=Str, required=True)
+        spec.input("cp2k_codename", valid_type=Str, required=True)
+        spec.input("ddec_codename", valid_type=Str, required=True)
         spec.input("zeopp_codename", valid_type=Str, required=True)
         spec.input("raspa_codename", valid_type=Str, required=True)
         spec.input("_options", valid_type=dict, required=False, default=options)
@@ -142,9 +142,9 @@ class Isotherm(WorkChain):
         }
 
         inputs = {
-            'code'       : Code.get_from_string('cp2k_6.0_18265@daint-s761'), # self.inputs.cp2k_codename.value
-            'structure'  : from_cif_to_structuredata(self.ctx.processed_structure), # 
-            'parameters' : ParameterData(dict=self.return_cp2k_parameters()),
+            'code'       : Code.get_from_string(self.inputs.cp2k_codename.value),
+            'structure'  : from_cif_to_structuredata(self.ctx.processed_structure),
+            'parameters' : self.inputs.cp2k_parameters,
             '_options'   : options,
             '_label'     : "run_chargedensity_cp2k",
         }
@@ -164,11 +164,11 @@ class Isotherm(WorkChain):
         options = self.inputs._options
         #options['prepend_text'] = "export OMP_NUM_THREADS=12"
         inputs = {
-            'code'       : Code.get_from_string('ddec@daint-s761'),
-            'parameters' : ParameterData(dict=self.return_ddec_parameters()),
-            'electronic_calc_folder': cp2k_calc.out.remote_folder,
-            '_options'   : options,
-            '_label'     : "run_pointcharges_ddec",
+            'code'                   : Code.get_from_string(self.inputs.ddec_codename.value),
+            'parameters'             : self.inputs.ddec_parameters,
+            'electronic_calc_folder' : cp2k_calc.out.remote_folder,
+            '_options'               : options,
+            '_label'                 : "run_pointcharges_ddec",
         }
         # Create the calculation process and launch it
         process = DdecCalculation.process()
@@ -364,143 +364,7 @@ class Isotherm(WorkChain):
         self.ax.plot(*zip(*self.ctx.result), marker='o', linestyle='--', color='r')
         self.fig.canvas.draw()
 
-    def return_ddec_parameters (self, atomic_densities="/scratch/snx3000/ongari/atomic_densities/"):
-        
-        params = {
-            "net charge": 0.0,
-            "charge type": "DDEC6",
-            "periodicity along A, B, and C vectors" : [True, True, True,],
-            "compute BOs" : False,
-            "atomic densities directory complete path" : atomic_densities,
-            "input filename" : "valence_density",
-            "number of core electrons":[
-                "1  0",
-                "2  0",
-                "3  0",
-                "4  0",
-                "5  2",
-                "6  2",
-                "7  2",
-                "8  2",
-                "9  2",
-                "10 2",
-                "11 2",
-                "12 2",
-                "13 10",
-                "14 10",
-                "15 10",
-                "16 10",
-                "17 10",
-                "18 10",
-                "19 10",
-                "20 10",
-                "21 10",
-                "22 10",
-                "23 10",
-                "24 10",
-                "25 10",
-                "26 10",
-                "27 10",
-                "28 10",
-                "29 18",
-                "30 18",
-                "35 28",
-                "53 46",
-                ]
-        }
-        return params
 
-    def return_cp2k_parameters (self, multiplicity=1):
-        params = {
-            'FORCE_EVAL': {
-                'METHOD': 'Quickstep',
-                'DFT': {
-                    'UKS': multiplicity,
-                    'CHARGE': 0,
-                    'BASIS_SET_FILE_NAME': 'BASIS_MOLOPT',
-                    'POTENTIAL_FILE_NAME': 'GTH_POTENTIALS',
-                    'QS': {
-                        'METHOD':'GPW',
-                    },
-                    'POISSON': {
-                        'PERIODIC': 'XYZ',
-                    },
-                    'MGRID': {
-                        'CUTOFF':     600,
-                        'NGRIDS':       4,
-                        'REL_CUTOFF':  50,
-                    },
-                    'SCF':{
-                        'SCF_GUESS': 'ATOMIC',
-                        'EPS_SCF': 1.0e-6,
-                        'MAX_SCF': 50,
-                        'MAX_ITER_LUMO': 10000,
-                        'OUTER_SCF': {
-                                    'MAX_SCF': 10,
-                                    'EPS_SCF': 1.0e-6,
-                        },
-                        'OT': {
-                                'MINIMIZER': 'CG',
-                                'PRECONDITIONER': 'FULL_ALL',
-                        },
-                    },
-                    'XC': {
-                        'XC_FUNCTIONAL': {
-                            '_': 'PBE',
-                        },
-                    },
-                    'PRINT': {
-                        'E_DENSITY_CUBE': {
-                            'STRIDE': '1 1 1',
-                            },
-                        'MO_CUBES': {
-                            'STRIDE': '1 1 1',
-                            'WRITE_CUBE': 'F',
-                            'NLUMO': 1,
-                            'NHOMO': 1,
-                        },
-                    },
-                },
-                'SUBSYS': {
-                    'KIND': [
-                        {'_': 'H', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'Li', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'B', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'N', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'C', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'O', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'F', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'Si', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'P', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'S', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'Cl', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'Ni', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'Cu', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'Zn', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'Br', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                        {'_': 'I', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
-                            'POTENTIAL': 'GTH-PBE'},
-                    ],
-                },
-            },
-        }
-
-        return params
 
 import ipywidgets as ipw
 
@@ -636,6 +500,168 @@ class IsothermSettings():
                 "CreateNumberOfMolecules"          : 0,
                 }],
                 }
+        return params
+    
+    def return_cp2k_parameters (self, structure, smearing=False):
+        multiplicity = 1 + structure.get_ase().get_chemical_symbols().count('Cu')
+        params = {
+            'FORCE_EVAL': {
+                'METHOD': 'Quickstep',
+                'DFT': {
+                    'MULTIPLICITY': multiplicity,
+                    'UKS': True if multiplicity != 1 else False,
+                    'CHARGE': 0,
+                    'BASIS_SET_FILE_NAME': 'BASIS_MOLOPT',
+                    'POTENTIAL_FILE_NAME': 'GTH_POTENTIALS',
+                    'QS': {
+                        'METHOD':'GPW',
+                    },
+                    'POISSON': {
+                        'PERIODIC': 'XYZ',
+                    },
+                    'MGRID': {
+                        'CUTOFF':     400,
+                        'NGRIDS':       4,
+                        'REL_CUTOFF':  50,
+                    },
+                    'SCF':{
+                        'SCF_GUESS': 'ATOMIC',
+                        'EPS_SCF': 1.0e-6,
+                        'MAX_SCF': 50,
+                        'MAX_ITER_LUMO': 10000,
+                    },
+                    'XC': {
+                        'XC_FUNCTIONAL': {
+                            '_': 'PBE',
+                        },
+                    },
+                    'PRINT': {
+                        'E_DENSITY_CUBE': {
+                            'STRIDE': '1 1 1',
+                            },
+                        'MO_CUBES': {
+                            'STRIDE': '1 1 1',
+                            'WRITE_CUBE': 'F',
+                            'NLUMO': 1,
+                            'NHOMO': 1,
+                        },
+                    },
+                },
+                'SUBSYS': {
+                    'KIND': [
+                        {'_': 'H', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Li', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'B', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'N', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'C', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'O', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'F', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Si', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'P', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'S', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Cl', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Ni', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Cu', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Zn', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'Br', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                        {'_': 'I', 'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
+                            'POTENTIAL': 'GTH-PBE'},
+                    ],
+                },
+            },
+        }
+        
+        scf = params['FORCE_EVAL']['DFT']['SCF']
+
+        if smearing:
+            scf['MAX_SCF'] = 500
+            scf['ADDED_MOS'] = 1000
+
+            scf['SMEAR'] = {
+                '_'                        : 'ON',
+                'METHOD'                   : 'FERMI_DIRAC',
+                'ELECTRONIC_TEMPERATURE'   : 300,
+            }
+
+            scf['DIAGONALIZATION'] = {'ALGORITHM': 'STANDARD'}
+            
+            scf['MIXING'] = {
+                'METHOD'    : 'BROYDEN_MIXING',
+                'ALPHA'     : 0.1,
+                'NBROYDEN'  : 8,
+            }
+            
+        else:
+            scf['OUTER_SCF'] = {
+                        'MAX_SCF': 10,
+                        'EPS_SCF': 1.0e-6,
+            }
+
+            scf['OT'] = {
+                    'MINIMIZER': 'CG',
+                    'PRECONDITIONER': 'FULL_ALL',
+            },
+
+        return params
+    
+    def return_ddec_parameters (self, atomic_densities="/scratch/snx3000/ongari/atomic_densities/"):
+        params = {
+            "net charge": 0.0,
+            "charge type": "DDEC6",
+            "periodicity along A, B, and C vectors" : [True, True, True,],
+            "compute BOs" : False,
+            "atomic densities directory complete path" : atomic_densities,
+            "input filename" : "valence_density",
+            "number of core electrons":[
+                "1  0",
+                "2  0",
+                "3  0",
+                "4  0",
+                "5  2",
+                "6  2",
+                "7  2",
+                "8  2",
+                "9  2",
+                "10 2",
+                "11 2",
+                "12 2",
+                "13 10",
+                "14 10",
+                "15 10",
+                "16 10",
+                "17 10",
+                "18 10",
+                "19 10",
+                "20 10",
+                "21 10",
+                "22 10",
+                "23 10",
+                "24 10",
+                "25 10",
+                "26 10",
+                "27 10",
+                "28 10",
+                "29 18",
+                "30 18",
+                "35 28",
+                "53 46",
+                ]
+        }
         return params
 
 # EOF
