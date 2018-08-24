@@ -54,7 +54,8 @@ class Isotherm(WorkChain):
             "resources": {
                 "num_machines": 1,
                 "tot_num_mpiprocs": 1,
-                "num_mpiprocs_per_machine": 1,
+                "num_mpiprocs_per_machine": 1, 
+                "parallel_env": 'mpi',
             },
             "max_wallclock_seconds": 30 * 60,
             "withmpi": False,
@@ -137,6 +138,7 @@ class Isotherm(WorkChain):
             "resources": {
                 "num_machines": 4,
                 "num_mpiprocs_per_machine": 12,
+                "parallel_env": 'mpi',
             },
             "max_wallclock_seconds": 3 * 60 * 60,
         }
