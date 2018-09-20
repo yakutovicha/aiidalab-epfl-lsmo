@@ -46,7 +46,6 @@ cp2k_default_parameters = {
     'FORCE_EVAL': {
         'METHOD': 'Quickstep',
         'DFT': {
-            'LSD': True,
             'CHARGE': 0,
             'BASIS_SET_FILE_NAME': 'BASIS_MOLOPT',
             'POTENTIAL_FILE_NAME': 'GTH_POTENTIALS',
@@ -92,7 +91,16 @@ cp2k_default_parameters = {
         },
         'SUBSYS': {
         },
+        'PRINT': { # this is to print forces (may be necessary for problems
+            #detection)
+            'FORCES':{
+                '_': 'ON',
+                }
+            },
     },
+    'GLOBAL':{
+            "EXTENDED_FFT_LENGTHS": True, # Needed for large systems
+            }
 }
 
 
@@ -129,6 +137,7 @@ def last_scf_loop(fpath):
     return content[-n-1:]
 
 def scf_converged(fpath):
+    """Take last SCF cycle and check whether it converged or not"""
     content = last_scf_loop(fpath)
     for line in content:
         if "SCF run converged in" in line:
@@ -136,6 +145,7 @@ def scf_converged(fpath):
     return False
 
 def scf_was_diverging(fpath):
+    """A function that detects diverging SCF"""
     content = last_scf_loop(fpath)
     for line in content:
         if "Minimizer" in line and "CG" in line:
@@ -180,13 +190,14 @@ def get_atom_kinds(structure):
             })
     return kinds
 
-options = {
+default_options = {
     "resources": {
         "num_machines": 1,
-        "num_mpiprocs_per_machine": 12,
+        "num_mpiprocs_per_machine": 2,
     },
     "max_wallclock_seconds": 3 * 60 * 60,
     }
+
 class Cp2kDftBaseWorkChain(WorkChain):
     """
     A base workchain to be used for DFT calculations with CP2K
@@ -199,8 +210,9 @@ class Cp2kDftBaseWorkChain(WorkChain):
         spec.input("parameters", valid_type=ParameterData,
                 default=ParameterData(dict={}))
         spec.input("options", valid_type=ParameterData,
-                default=ParameterData(dict=options))
-        spec.input('parent_folder', valid_type=RemoteData, required=False) 
+                default=ParameterData(dict=default_options))
+        spec.input('parent_folder', valid_type=RemoteData,
+                default=None, required=False)
         
         spec.outline(
             cls.setup,
@@ -212,25 +224,23 @@ class Cp2kDftBaseWorkChain(WorkChain):
             cls.return_results,
         )
         spec.output('output_structure', valid_type=StructureData, required=False)
-#        spec.output('output_parameters', valid_type=ParameterData)
-#        spec.output('remote_folder', valid_type=RemoteData)
+        spec.output('output_parameters', valid_type=ParameterData)
+        spec.output('remote_folder', valid_type=RemoteData)
 
     def setup(self):
+        """Perform initial setup"""
         self.ctx.done = False
-        self.ctx.restart_calc = None
-        # TODO: use restart from self.inputs.parent_folder
+
         self.ctx.nruns = 0
 
-#       This code doesn't work :(
-#       How one can assign labels to the workchain?
-#        if self.inputs.label:
-#            self.label = self.inputs.label
-
         self.ctx.structure = self.inputs.structure
-
+        try:
+            self.ctx.restart_calc = self.inputs.parent_folder
+        except:
+            self.ctx.restart_calc = None
         self.ctx.parameters = cp2k_default_parameters
         user_params = self.inputs.parameters.get_dict()
-        merge_dict(self.ctx.parameters, user_params)
+        dict_merge(self.ctx.parameters, user_params)
 
         self.ctx.options = self.inputs.options.get_dict()
 
@@ -247,6 +257,15 @@ class Cp2kDftBaseWorkChain(WorkChain):
 
     def prepare_calculation(self):
         """Prepare all the neccessary input links to run the calculation"""
+
+        # restart from the previous calculation only if the necessary data are
+        # provided
+        if self.ctx.restart_calc:
+            self.ctx.inputs['parent_folder'] = self.ctx.restart_calc
+            self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['SCF_GUESS'] = 'RESTART'
+        else:
+            self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['SCF_GUESS'] = 'ATOMIC'
+
         p = ParameterData(dict=self.ctx.parameters)
         p.store()
 
@@ -255,19 +274,10 @@ class Cp2kDftBaseWorkChain(WorkChain):
             'structure'  : self.ctx.structure,
             'parameters' : p,
             '_options'    : self.ctx.options,
-            '_label'      : "DFTwithCP2k",
             })
-
-        # restart from the previous calculation only if the necessary data are
-        # provided
-        if self.ctx.restart_calc:
-            self.ctx.inputs['parent_folder'] = self.ctx.calculation['remote_folder']
 
     def run_calculation(self): 
         """Run cp2k calculation."""
-        
-#        with open("/home/epfl/work/mc-epfl-lsmo/workflows/cp2k/workflow.output", "w") as f:
-#            f.write(str(self.ctx.inputs))
         
         # Create the calculation process and launch it
         process = Cp2kCalculation.process()
@@ -279,10 +289,14 @@ class Cp2kDftBaseWorkChain(WorkChain):
     
     def inspect_calculation(self):
         """
-        Analyse the reults of CP2K calculation and decide weahter there is a
+        Analyse the results of CP2K calculation and decide weather there is a
         need to restart it. If yes, then decide exactly how to restart the
         calculation.
         """
+        # TODO: check whether the CP2K did not stop the execution because of an
+        # error that it detected. In that case the calculation will most
+        # probably be in the status "PARSINGFAILED"
+
         # I will try to disprove those statements. I will not succeed in doing
         # so - the calculation will be considered as completed
         converged_geometry = True
@@ -292,9 +306,12 @@ class Cp2kDftBaseWorkChain(WorkChain):
         # File to analyze
         outfile = self.ctx.calculation['retrieved'].get_abs_path() + '/path/aiida.out'
         self.ctx.restart_calc = self.ctx.calculation['remote_folder']
+        self.ctx.output_parameters = self.ctx.calculation['output_parameters']
+
+        #TODO: parse and analyse the bandgap
 
         # First (and the simplest) check is whether the runtime was exceeded
-        exceeded_time = self.ctx.calculation['output_parameters'].dict['exceeded_walltime']
+        exceeded_time = self.ctx.output_parameters.dict['exceeded_walltime']
         if exceeded_time:
             self.report("The time of the cp2k calculation has been exceeded")
         else:
@@ -302,21 +319,22 @@ class Cp2kDftBaseWorkChain(WorkChain):
 
         # Second check is whether the last SCF did converge
         converged_scf = scf_converged(outfile)
-        self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['SCF_GUESS'] = 'RESTART'
         if not converged_scf and scf_was_diverging(outfile):
             # If, however, scf was even diverging I should go for more robust
             # minimizer.
-            # Aslo, to avoid being trapped in the wrong minimum I restart
-            # from atomic wavefunctions.
-            self.report("Going for more robust (but slow) SCF minimizer")
-            self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['SCF_GUESS'] = 'ATOMIC'
-            self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['MAX_SCF'] = 2000
             self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['OT']['MINIMIZER'] = 'CG' 
+            self.report("Going for more robust (but slow) SCF minimizer")
+            # Also, to avoid being trapped in the wrong minimum I restart
+            # from atomic wavefunctions.
+            self.ctx.restart_calc = None
+            # I will disable outer_scf steps to enforce convergence
+            self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['MAX_SCF'] = 2000
             self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['OUTER_SCF']['MAX_SCF'] = 0
 
             # TODO: I may also look for the forces here. For example a very
             # strong force may cause convergence problems, needs to be
             # implemented
+            # UPDATE: from now forces are be printed by default
                 
 
        # Third check:
@@ -333,3 +351,5 @@ class Cp2kDftBaseWorkChain(WorkChain):
 
     def return_results(self):
         self.out('output_structure', self.ctx.structure)
+        self.out('output_parameters', self.ctx.output_parameters)
+        self.out('remote_folder', self.ctx.restart_calc)
