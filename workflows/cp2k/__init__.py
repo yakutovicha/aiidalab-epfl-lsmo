@@ -42,10 +42,11 @@ spin = {
         "Zr" : 2.0/2.0,
         }
 
-params = {
+cp2k_default_parameters = {
     'FORCE_EVAL': {
         'METHOD': 'Quickstep',
         'DFT': {
+            'LSD': True,
             'CHARGE': 0,
             'BASIS_SET_FILE_NAME': 'BASIS_MOLOPT',
             'POTENTIAL_FILE_NAME': 'GTH_POTENTIALS',
@@ -93,6 +94,25 @@ params = {
         },
     },
 }
+
+
+def dict_merge(dct, merge_dct):
+    """ Taken from https://gist.github.com/angstwad/bf22d1822c38a92ec0a9
+    Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    ``dct``.
+    :param dct: dict onto which the merge is executed
+    :param merge_dct: dct merged into dct
+    :return: None
+    """
+    import collections
+    for k, v in merge_dct.iteritems():
+        if (k in dct and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], collections.Mapping)):
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
 
 
 def last_scf_loop(fpath):
@@ -177,7 +197,7 @@ class Cp2kDftBaseWorkChain(WorkChain):
         spec.input('code', valid_type=Code)
         spec.input('structure', valid_type=StructureData)
         spec.input("parameters", valid_type=ParameterData,
-                default=ParameterData(dict=params))
+                default=ParameterData(dict={}))
         spec.input("options", valid_type=ParameterData,
                 default=ParameterData(dict=options))
         spec.input('parent_folder', valid_type=RemoteData, required=False) 
@@ -201,13 +221,17 @@ class Cp2kDftBaseWorkChain(WorkChain):
         # TODO: use restart from self.inputs.parent_folder
         self.ctx.nruns = 0
 
-#       This (below) doesn't work :(
+#       This code doesn't work :(
 #       How one can assign labels to the workchain?
 #        if self.inputs.label:
 #            self.label = self.inputs.label
 
         self.ctx.structure = self.inputs.structure
-        self.ctx.parameters = self.inputs.parameters.get_dict()
+
+        self.ctx.parameters = cp2k_default_parameters
+        user_params = self.inputs.parameters.get_dict()
+        merge_dict(self.ctx.parameters, user_params)
+
         self.ctx.options = self.inputs.options.get_dict()
 
         multiplicity = get_multiplicity(self.inputs.structure)
@@ -216,8 +240,6 @@ class Cp2kDftBaseWorkChain(WorkChain):
         self.ctx.parameters['FORCE_EVAL']['DFT']['MULTIPLICITY'] = multiplicity
         self.ctx.parameters['FORCE_EVAL']['SUBSYS']['KIND'] = kinds
 
-        # TODO: implement merging of the input cp2k-parameters with the default
-        # ones
 
 
     def should_run_calculation(self):
