@@ -213,6 +213,8 @@ class Cp2kDftBaseWorkChain(WorkChain):
                 default=ParameterData(dict=default_options))
         spec.input('parent_folder', valid_type=RemoteData,
                 default=None, required=False)
+        spec.input('_guess_multiplisity', valid_type=bool,
+                default=False)
         
         spec.outline(
             cls.setup,
@@ -244,10 +246,16 @@ class Cp2kDftBaseWorkChain(WorkChain):
 
         self.ctx.options = self.inputs.options.get_dict()
 
-        multiplicity = get_multiplicity(self.inputs.structure)
-        kinds = get_atom_kinds(self.inputs.structure)
+        # Trying to guess the multiplicity of the system
+        if self.inputs._guess_multiplisity:
+            multiplicity = get_multiplicity(self.inputs.structure)
+            self.ctx.parameters['FORCE_EVAL']['DFT']['MULTIPLICITY'] = multiplicity
+            if multiplicity != 1:
+                self.ctx.parameters['FORCE_EVAL']['DFT']['LSD'] = True
+        # Otherwise take the default
 
-        self.ctx.parameters['FORCE_EVAL']['DFT']['MULTIPLICITY'] = multiplicity
+
+        kinds = get_atom_kinds(self.inputs.structure)
         self.ctx.parameters['FORCE_EVAL']['SUBSYS']['KIND'] = kinds
 
 
@@ -257,6 +265,11 @@ class Cp2kDftBaseWorkChain(WorkChain):
 
     def prepare_calculation(self):
         """Prepare all the neccessary input links to run the calculation"""
+        self.ctx.inputs = AttributeDict({
+            'code': self.inputs.code,
+            'structure'  : self.ctx.structure,
+            '_options'    : self.ctx.options,
+            })
 
         # restart from the previous calculation only if the necessary data are
         # provided
@@ -266,15 +279,10 @@ class Cp2kDftBaseWorkChain(WorkChain):
         else:
             self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['SCF_GUESS'] = 'ATOMIC'
 
+        # use the new parameters
         p = ParameterData(dict=self.ctx.parameters)
         p.store()
-
-        self.ctx.inputs = AttributeDict({
-            'code': self.inputs.code,
-            'structure'  : self.ctx.structure,
-            'parameters' : p,
-            '_options'    : self.ctx.options,
-            })
+        self.ctx.inputs['parameters'] = p
 
     def run_calculation(self): 
         """Run cp2k calculation."""
@@ -327,6 +335,7 @@ class Cp2kDftBaseWorkChain(WorkChain):
             # Also, to avoid being trapped in the wrong minimum I restart
             # from atomic wavefunctions.
             self.ctx.restart_calc = None
+            self.report("Not going to restart from the previous wavefunctions")
             # I will disable outer_scf steps to enforce convergence
             self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['MAX_SCF'] = 2000
             self.ctx.parameters['FORCE_EVAL']['DFT']['SCF']['OUTER_SCF']['MAX_SCF'] = 0
