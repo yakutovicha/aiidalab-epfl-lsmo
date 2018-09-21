@@ -248,10 +248,13 @@ class Cp2kDftBaseWorkChain(WorkChain):
 
         # Trying to guess the multiplicity of the system
         if self.inputs._guess_multiplisity:
+            self.report("Guessing multiplicity")
             multiplicity = get_multiplicity(self.inputs.structure)
             self.ctx.parameters['FORCE_EVAL']['DFT']['MULTIPLICITY'] = multiplicity
+            self.report("Obtained multiplicity: {}".format(multiplicity))
             if multiplicity != 1:
                 self.ctx.parameters['FORCE_EVAL']['DFT']['LSD'] = True
+                self.report("Switching to LSD calculation")
         # Otherwise take the default
 
 
