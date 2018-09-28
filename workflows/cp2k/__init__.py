@@ -29,17 +29,17 @@ spin = {
         "Cl" : 0.0,
         "K"  : 0.0,
         "Ca" : 0.0,
-        "Sc" : 1.0/2.0,
-        "Ti" : 2.0/2.0,
-        "V"  : 3.0/2.0,
-        "Cr" : 4.0/2.0,
-        "Mn" : 5.0/2.0,
-        "Fe" : 4.0/2.0,
-        "Co" : 3.0/2.0,
-        "Ni" : 2.0/2.0,
-        "Cu" : 1.0/2.0,
+        "Sc" : 1.0 / 2.0,
+        "Ti" : 2.0 / 2.0,
+        "V"  : 3.0 / 2.0,
+        "Cr" : 4.0 / 2.0,
+        "Mn" : 5.0 / 2.0,
+        "Fe" : 4.0 / 2.0,
+        "Co" : 3.0 / 2.0,
+        "Ni" : 2.0 / 2.0,
+        "Cu" : 1.0 / 2.0,
         "Zn" : 0.0,
-        "Zr" : 2.0/2.0,
+        "Zr" : 2.0 / 2.0,
         }
 
 cp2k_default_parameters = {
@@ -186,7 +186,7 @@ def get_atom_kinds(structure):
             '_': a,
             'BASIS_SET': 'DZVP-MOLOPT-SR-GTH',
             'POTENTIAL': 'GTH-PBE',
-            'MAGNETIZATION': spin[a]*2.0,
+            'MAGNETIZATION': spin[a] * 2.0,
             })
     return kinds
 
@@ -199,9 +199,7 @@ default_options = {
     }
 
 class Cp2kDftBaseWorkChain(WorkChain):
-    """
-    A base workchain to be used for DFT calculations with CP2K
-    """
+    """A base workchain to be used for DFT calculations with CP2K"""
     @classmethod
     def define(cls, spec):
         super(Cp2kDftBaseWorkChain, cls).define(spec)
@@ -242,6 +240,13 @@ class Cp2kDftBaseWorkChain(WorkChain):
             self.ctx.restart_calc = None
         self.ctx.parameters = cp2k_default_parameters
         user_params = self.inputs.parameters.get_dict()
+        
+        # As it should be possible to redefine the default atom kinds by user I
+        # put the default values prior to merging self.ctx.parameters with
+        # user_params
+        kinds = get_atom_kinds(self.inputs.structure)
+        self.ctx.parameters['FORCE_EVAL']['SUBSYS']['KIND'] = kinds
+
         dict_merge(self.ctx.parameters, user_params)
 
         self.ctx.options = self.inputs.options.get_dict()
@@ -257,9 +262,6 @@ class Cp2kDftBaseWorkChain(WorkChain):
                 self.report("Switching to LSD calculation")
         # Otherwise take the default
 
-
-        kinds = get_atom_kinds(self.inputs.structure)
-        self.ctx.parameters['FORCE_EVAL']['SUBSYS']['KIND'] = kinds
 
 
 

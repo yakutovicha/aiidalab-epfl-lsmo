@@ -1,19 +1,17 @@
 from aiida.orm import CalculationFactory, DataFactory
-
 from aiida.orm import load_node
-
-from aiida.work.workchain import WorkChain, ToContext, if_, while_, Outputs
-from aiida.work.run import run, submit
-
-from aiida.work import workfunction as wf
-
-from aiida.orm.data.parameter import ParameterData
-from aiida.orm.data.array import ArrayData
-from aiida.orm.data.cif import CifData
-from aiida.orm.data.structure import StructureData
-from aiida.orm.data.base import Bool, Str
-
 from aiida.orm.code import Code
+from aiida.orm.data.array import ArrayData
+from aiida.orm.data.base import Bool, Str
+from aiida.orm.data.cif import CifData
+from aiida.orm.data.parameter import ParameterData
+from aiida.orm.data.structure import StructureData
+from aiida.work import workfunction as wf
+from aiida.work.run import run, submit
+from aiida.work.workchain import WorkChain, ToContext, if_, while_, Outputs
+
+import matplotlib.pyplot as plt
+
 #from aiida.orm
 Cp2kCalculation = CalculationFactory('cp2k')
 DdecCalculation = CalculationFactory('ddec')
@@ -21,7 +19,6 @@ RaspaCalculation = CalculationFactory('raspa')
 ZeoppCalculation = CalculationFactory('zeopp.network')
 
 
-import matplotlib.pyplot as plt
 
 
 @wf
@@ -55,7 +52,6 @@ class Isotherm(WorkChain):
                 "num_machines": 1,
                 "tot_num_mpiprocs": 1,
                 "num_mpiprocs_per_machine": 1, 
-                "parallel_env": 'mpi',
             },
             "max_wallclock_seconds": 30 * 60,
             "withmpi": False,
@@ -138,7 +134,6 @@ class Isotherm(WorkChain):
             "resources": {
                 "num_machines": 4,
                 "num_mpiprocs_per_machine": 12,
-                "parallel_env": 'mpi',
             },
             "max_wallclock_seconds": 3 * 60 * 60,
         }

@@ -45,7 +45,6 @@ class Cp2kGeoOptWorkChain(Cp2kDftBaseWorkChain):
             "resources": {
                 "num_machines": 4,
                 "num_mpiprocs_per_machine": 12,
-                "parallel_env": 'mpi',
             },
             "max_wallclock_seconds": 3 * 60 * 60,
         }
