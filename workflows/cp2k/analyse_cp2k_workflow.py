@@ -1,6 +1,10 @@
 import sys
 from ase.io import read,write
+
+from aiida.orm.calculation.work import WorkCalculation
+from aiida.orm.data.structure import StructureData
 from aiida.orm.utils import CalculationFactory
+
 cp2k_calc = CalculationFactory('cp2k')
 
 
@@ -24,7 +28,11 @@ def print_field(to_parse, cp2k_calc=None, title=False):
             print parse_out(cp2k_calc, element["grep_string"], element["n_word_print"]).rjust(length)[:length],
         print " |",
 
-
+def get_workcalcs_from_label(label="", type_workcalc=""):
+    q = QueryBuilder()
+    q.append(StructureData, filters={'label' : {'==': label}}, tag='structure')
+    q.append(type_workcalc, descendant_of='structure')
+    return list(zip(*q.all())[0])
 
 to_parse = [
         {
@@ -50,9 +58,17 @@ print " Minimizer |",
 print "                                       path                               |",
 print ""
 
-for workcalcn in sys.argv[1:]:
-    workcalc = load_node(int(workcalcn))
-     
+list_workcalcn = []
+
+for inp in sys.argv[1:]:
+    try:
+        pkn = [ load_node(int(inp)) ]
+    except:
+        pkn = get_workcalcs_from_label(label=inp, type_workcalc=WorkCalculation)
+
+    list_workcalcn += pkn
+
+for workcalc in list_workcalcn:
     inp_struct = workcalc.inp.structure.get_ase().get_chemical_formula(), workcalc.inp.structure.label
     if not workcalc.has_finished():
         print "Skipping underway workchain: {}".format(workcalc.pk)
