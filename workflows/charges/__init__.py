@@ -9,7 +9,7 @@ from aiida.orm.data.remote import RemoteData
 from aiida.orm.data.structure import StructureData  # noqa
 from aiida.work.run import submit
 from aiida.work.workchain import WorkChain, ToContext, Outputs
-from cp2k import Cp2kDftBaseWorkChain
+from aiida_cp2k.workflows import Cp2kDftBaseWorkChain
 
 
 default_options = {
