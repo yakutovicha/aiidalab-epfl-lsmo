@@ -9,6 +9,8 @@ def get_start_widget(appbase, jupbase):
         <th style="width:70px" rowspan=2></th>
         <th style="text-align:center">Charges</th>        
         <th style="width:70px" rowspan=2></th>
+        <th style="text-align:center">Pore analysis</th>        
+        <th style="width:70px" rowspan=2></th>
         <th style="text-align:center">Import your data to AiiDA</th>        
     <tr>
     <td valign="top"><ul>
@@ -19,6 +21,10 @@ def get_start_widget(appbase, jupbase):
      
      <td valign="top"><ul>
     <li><a href="{appbase}/charges/compute_charges.ipynb" target="_blank">Compute Charges</a>
+    </ul></td>
+
+     <td valign="top"><ul>
+    <li><a href="{appbase}/pores/pores.ipynb" target="_blank">Compute Pores</a>
     </ul></td>
     
     <td valign="top"><ul>
