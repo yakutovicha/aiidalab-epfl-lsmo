@@ -134,20 +134,20 @@ class Isotherm(WorkChain):
     def run_geo_opt(self):
         """Optimize geometry."""
         threshold = self.inputs.min_cell_size
-
-        params_dict = {
-                'MOTION':{
-                    'MD':{
-                        'STEPS': 5,
-                        },
-                    'GEO_OPT': {
-                        'MAX_ITER': 5,
-                    },
-                    'CELL_OPT': {
-                        'MAX_ITER': 5,
-                    },
-                },
-        }
+    # uncomment this for the test runs
+#        params_dict = {
+#                'MOTION':{
+#                    'MD':{
+#                        'STEPS': 5,
+#                        },
+#                    'GEO_OPT': {
+#                        'MAX_ITER': 5,
+#                    },
+#                    'CELL_OPT': {
+#                        'MAX_ITER': 5,
+#                    },
+#                },
+#        }
         parameters = ParameterData(dict=params_dict)
 
         inputs = {
