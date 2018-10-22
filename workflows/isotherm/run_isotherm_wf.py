@@ -13,7 +13,7 @@ ArrayData = DataFactory('array')
 ParameterData = DataFactory('parameter')
 CifData = DataFactory('cif')
 
-structure = CifData(file=os.getcwd()+'/BONWAD.cif')
+structure = CifData(file=os.getcwd()+'/Cu-MOF-74.cif')
 
 cp2k_options = {
     "resources": {
@@ -100,5 +100,6 @@ submit(Isotherm,
         raspa_parameters=raspa_parameters,
         _raspa_options=zr_options,
         _usecharges=True,
+        _guess_multiplicity=True,
         _label='Isotherm',
         )

@@ -12,6 +12,31 @@ from aiida_cp2k.workflows import Cp2kRobustGeoOptWorkChain
 from aiida_raspa.workflows import RaspaConvergeWorkChain
 from aiida_zeopp.workflows import ZeoppBlockPocketsWorkChain
 
+def dict_merge(dct, merge_dct):
+    """ Taken from https://gist.github.com/angstwad/bf22d1822c38a92ec0a9
+    Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    ``dct``.
+    :param dct: dict onto which the merge is executed
+    :param merge_dct: dct merged into dct
+    :return: None
+    """
+    import collections
+    for k, v in merge_dct.iteritems():
+        if (k in dct and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], collections.Mapping)):
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
+
+@wf
+def merge_ParameterData(p1, p2):
+    p1_dict = p1.get_dict()
+    p2_dict = p2.get_dict()
+    dict_merge(p1_dict, p2_dict)
+    return ParameterData(dict=p1_dict).store()
+
 # data objects
 ArrayData = DataFactory('array')
 CifData = DataFactory('cif')
@@ -52,6 +77,48 @@ def multiply_unit_cell (cif, threshold):
     # and computing nx, ny and nz
     return tuple(int(i) for i in np.ceil(threshold/diag*2.))
 
+spin = {
+        "H"  : 0.0,
+        "Li" : 0.0,
+        "Be" : 0.0,
+        "B"  : 0.0,
+        "C"  : 0.0,
+        "N"  : 0.0,
+        "O"  : 0.0,
+        "F"  : 0.0,
+        "Na" : 0.0,
+        "Mg" : 0.0,
+        "Al" : 0.0,
+        "Si" : 0.0,
+        "P"  : 0.0,
+        "S"  : 0.0,
+        "Cl" : 0.0,
+        "K"  : 0.0,
+        "Ca" : 0.0,
+        "Sc" : 1.0 / 2.0,
+        "Ti" : 2.0 / 2.0,
+        "V"  : 3.0 / 2.0,
+        "Cr" : 4.0 / 2.0,
+        "Mn" : 5.0 / 2.0,
+        "Fe" : 4.0 / 2.0,
+        "Co" : 3.0 / 2.0,
+        "Ni" : 2.0 / 2.0,
+        "Cu" : 1.0 / 2.0,
+        "Zn" : 0.0,
+        "Zr" : 2.0 / 2.0,
+        }
+
+@wf
+def guess_multiplicity(structure):
+    multiplicity = 1
+    all_atoms = structure.get_ase().get_chemical_symbols()
+    for key, value in spin.iteritems():
+        multiplicity += all_atoms.count(key) * value * 2.0
+    multiplicity = int(round(multiplicity))
+    multiplicity_dict = {'FORCE_EVAL': {'DFT': {'MULTIPLICITY' :multiplicity}}}
+    if multiplicity != 1:
+        multiplicity_dict['FORCE_EVAL']['DFT']['UKS'] = True
+    return ParameterData(dict =multiplicity_dict)
 
 @wf
 def from_cif_to_structuredata(cif, threshold):
@@ -95,6 +162,7 @@ class Isotherm(WorkChain):
         # settings
         spec.input("_interactive", valid_type=bool, default=False, required=False)
         spec.input("_usecharges", valid_type=bool, default=False, required=False)
+        spec.input('_guess_multiplicity', valid_type=bool, default=False)
 
         # workflow
         spec.outline(
@@ -125,6 +193,8 @@ class Isotherm(WorkChain):
         self.ctx.current_p_index = 0
         self.ctx.result = []
 
+        self.ctx.cp2k_parameters = None
+
         self.ctx.raspa_parameters = self.inputs.raspa_parameters.get_dict()
 
         if self.inputs._usecharges:
@@ -134,29 +204,38 @@ class Isotherm(WorkChain):
     def run_geo_opt(self):
         """Optimize geometry."""
         threshold = self.inputs.min_cell_size
-    # uncomment this for the test runs
-#        params_dict = {
-#                'MOTION':{
-#                    'MD':{
-#                        'STEPS': 5,
-#                        },
-#                    'GEO_OPT': {
-#                        'MAX_ITER': 5,
-#                    },
-#                    'CELL_OPT': {
-#                        'MAX_ITER': 5,
-#                    },
-#                },
-#        }
-        parameters = ParameterData(dict=params_dict)
+        new_structure = from_cif_to_structuredata(cif=self.ctx.structure, threshold=threshold)
 
+        # Trying to guess the multiplicity of the system
         inputs = {
             'code'      : self.inputs.cp2k_code,
-            'structure' : from_cif_to_structuredata(cif=self.ctx.structure, threshold=threshold),
-            'parameters': parameters,
+            'structure' : new_structure, 
             '_options'  : self.inputs._cp2k_options,
             '_label'    : "Cp2kRobustGeoOptWorkChain",
         }
+
+        if self.inputs._guess_multiplicity:
+            self.report("Guessing multiplicity")
+            self.ctx.cp2k_parameters = guess_multiplicity(new_structure)
+            inputs['parameters'] = self.ctx.cp2k_parameters
+
+        # uncomment for the test runs
+        # FROM HERE
+        #params_dict = ParameterData(dict={
+        #        'MOTION':{
+        #            'MD':{
+        #                'STEPS': 5,
+        #                },
+        #            'GEO_OPT': {
+        #                'MAX_ITER': 5,
+        #            },
+        #            'CELL_OPT': {
+        #                'MAX_ITER': 5,
+        #            },
+        #        },
+        #        }).store()
+        #inputs['parameters'] = merge_ParameterData(self.ctx.cp2k_parameters, params_dict)
+        # TILL HERE
 
         # Create the calculation process and launch it
         running = submit(Cp2kRobustGeoOptWorkChain, **inputs)
@@ -178,6 +257,7 @@ class Isotherm(WorkChain):
         inputs = {
             'structure'          : self.ctx.structure,
             'cp2k_code'          : self.inputs.cp2k_code,
+            'cp2k_parameters'    : self.ctx.cp2k_parameters,
             'cp2k_parent_folder' : self.ctx.geo_opt_calc['remote_folder'],
             '_cp2k_options'      : self.inputs._cp2k_options,
             'ddec_code'          : self.inputs.ddec_code,

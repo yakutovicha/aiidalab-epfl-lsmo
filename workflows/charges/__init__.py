@@ -2,6 +2,7 @@ from __future__ import print_function
 
 from aiida.orm import CalculationFactory, DataFactory
 from aiida.orm.code import Code
+from aiida.work import workfunction as wf
 from aiida.work.run import submit
 from aiida.work.workchain import WorkChain, ToContext, Outputs
 from aiida_cp2k.workflows import Cp2kDftBaseWorkChain
@@ -16,6 +17,33 @@ ParameterData = DataFactory('parameter')
 RemoteData = DataFactory('remote')
 StructureData = DataFactory('structure')
 
+
+def dict_merge(dct, merge_dct):
+    """ Taken from https://gist.github.com/angstwad/bf22d1822c38a92ec0a9
+    Recursive dict merge. Inspired by :meth:``dict.update()``, instead of
+    updating only top-level keys, dict_merge recurses down into dicts nested
+    to an arbitrary depth, updating keys. The ``merge_dct`` is merged into
+    ``dct``.
+    :param dct: dict onto which the merge is executed
+    :param merge_dct: dct merged into dct
+    :return: None
+    """
+    import collections
+    for k, v in merge_dct.iteritems():
+        if (k in dct and isinstance(dct[k], dict)
+                and isinstance(merge_dct[k], collections.Mapping)):
+            dict_merge(dct[k], merge_dct[k])
+        else:
+            dct[k] = merge_dct[k]
+
+@wf
+def merge_ParameterData(p1, p2):
+    p1_dict = p1.get_dict()
+    p2_dict = p2.get_dict()
+    dict_merge(p1_dict, p2_dict)
+    return ParameterData(dict=p1_dict).store()
+
+empty_pd = ParameterData(dict={}).store()
 
 default_ddec_options = {
     "resources": {
@@ -80,6 +108,7 @@ class DdecChargesWorkChain(WorkChain):
         # specify the inputs of the workchain
         spec.input('structure', valid_type=StructureData)
         spec.input('cp2k_code', valid_type=Code)
+        spec.input("cp2k_parameters", valid_type=ParameterData, default=empty_pd)
         spec.input("_cp2k_options", valid_type=dict, default=None, required=False)
         spec.input('cp2k_parent_folder', valid_type=RemoteData, default=None, required=False)
         spec.input('ddec_code', valid_type=Code)
@@ -119,13 +148,12 @@ class DdecChargesWorkChain(WorkChain):
                         },
                     },
                 }).store()
-
+        parameters = merge_ParameterData(parameters, self.inputs.cp2k_parameters)
         inputs = {
             'code'                : self.inputs.cp2k_code,
             'structure'           : self.inputs.structure,
             'parameters'          : parameters,
             '_options'            : self.inputs._cp2k_options,
-            '_guess_multiplisity' : True,
             '_label'              : 'Cp2kDftBaseWorkChain',
             }
 
