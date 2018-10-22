@@ -5,7 +5,7 @@ from aiida.orm.code import Code
 from aiida.work.run import submit
 from aiida.work.workchain import WorkChain, ToContext, Outputs
 from aiida_cp2k.workflows import Cp2kDftBaseWorkChain
-
+from copy import deepcopy
 
 # calculations 
 DdecCalculation = CalculationFactory('ddec')
@@ -17,7 +17,7 @@ RemoteData = DataFactory('remote')
 StructureData = DataFactory('structure')
 
 
-default_options = {
+default_ddec_options = {
     "resources": {
         "num_machines": 1,
         "num_mpiprocs_per_machine": 1,
@@ -26,7 +26,7 @@ default_options = {
     "withmpi": False,
     }
 
-default_ddec_params = {
+default_ddec_params = ParameterData(dict={
     "net charge"                               : 0.0,
     "charge type"                              : "DDEC6",
     "periodicity along A, B, and C vectors"    : [True, True, True,],
@@ -67,7 +67,7 @@ default_ddec_params = {
         "35 28",
         "53 46",
         ]
-}
+}).store()
 
 class DdecChargesWorkChain(WorkChain):
     """A workchain that computes DDEC charges"""
@@ -76,15 +76,17 @@ class DdecChargesWorkChain(WorkChain):
         super(DdecChargesWorkChain, cls).define(spec)
         #TODO: Change to this when aiida 1.0.0 will be released
         #spec.expose_inputs(Cp2kDftBaseWorkChain, namespace='cp2k', exclude=('structure'))
+
+        # specify the inputs of the workchain
         spec.input('structure', valid_type=StructureData)
         spec.input('cp2k_code', valid_type=Code)
-        spec.input("cp2k_options", valid_type=ParameterData, default=None, required=False)
+        spec.input("_cp2k_options", valid_type=dict, default=None, required=False)
         spec.input('cp2k_parent_folder', valid_type=RemoteData, default=None, required=False)
         spec.input('ddec_code', valid_type=Code)
-        spec.input('ddec_parameters', valid_type=ParameterData, default=ParameterData(dict=default_ddec_params),
-                required=False)
-        spec.input("ddec_options", valid_type=ParameterData, default=ParameterData(dict=default_options), required=False)
+        spec.input('ddec_parameters', valid_type=ParameterData, default=default_ddec_params, required=False)
+        spec.input("_ddec_options", valid_type=dict, default=deepcopy(default_ddec_options), required=False)
 
+        # specify the chain of calculations to be performed
         spec.outline(
                 cls.setup,
                 cls.run_cp2k_charge_density,
@@ -92,6 +94,7 @@ class DdecChargesWorkChain(WorkChain):
                 cls.return_results,
                 )
 
+        # specify the outputs of the workchain
         spec.output('output_structure', valid_type=CifData, required=False)
 
     def setup(self):
@@ -109,21 +112,30 @@ class DdecChargesWorkChain(WorkChain):
                     'DFT':{
                         'PRINT':{
                             'E_DENSITY_CUBE':{
+                                '_'     : 'ON',
                                 'STRIDE': '1 1 1',
                                 }
                             },
                         },
                     },
-                })
+                }).store()
+
         inputs = {
-            'code'       : self.inputs.cp2k_code,
-            'structure'  : self.inputs.structure,
-            'parameters' : parameters,
-            'options'    : self.inputs.cp2k_options,
+            'code'                : self.inputs.cp2k_code,
+            'structure'           : self.inputs.structure,
+            'parameters'          : parameters,
+            '_options'            : self.inputs._cp2k_options,
             '_guess_multiplisity' : True,
+            '_label'              : 'Cp2kDftBaseWorkChain',
             }
+
+        try:
+            inputs['parent_folder'] = self.inputs.cp2k_parent_folder
+        except:
+            self.report("Folder with converged wavefunction was not provided, CP2K will compute it from scratch")
+
         running = submit(Cp2kDftBaseWorkChain, **inputs)
-        self.report("pk: {} | Running Cp2kDftBaseWorkChain to compute the charge-density")
+        self.report("pk: {} | Running Cp2kDftBaseWorkChain to compute the charge-density".format(running.pid))
         return ToContext(charge_density_calc=Outputs(running))
 
 
@@ -135,13 +147,13 @@ class DdecChargesWorkChain(WorkChain):
             'code'                   : self.inputs.ddec_code,
             'parameters'             : self.inputs.ddec_parameters,
             'charge_density_folder'  : charge_density,
-            '_options'               : self.inputs.ddec_options.get_dict(),
-            '_label'                 : "run_pointcharges_ddec",
+            '_options'               : self.inputs._ddec_options,
+            '_label'                 : "DdecCalculation",
         }
 
         # Create the calculation process and launch it
         running = submit(DdecCalculation.process(), **inputs)
-        self.report("pk: {} | Running ddec to compute point charges based on the charge-density")
+        self.report("pk: {} | Running ddec to compute point charges based on the charge-density".format(running.pid))
         return ToContext(ddec_calc=Outputs(running))
 
     def return_results(self):
