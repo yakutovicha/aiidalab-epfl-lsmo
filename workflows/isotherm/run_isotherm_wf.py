@@ -20,7 +20,6 @@ cp2k_options = {
         "num_machines": 2,
     },
     "max_wallclock_seconds": 1 * 60 * 60,
-    u'prepend_text': u'#SBATCH --partition=debug',
     }
 
 ddec_options = {

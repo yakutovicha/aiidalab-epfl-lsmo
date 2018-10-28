@@ -61,47 +61,28 @@ default_ddec_params = ParameterData(dict={
     "compute BOs"                              : False,
     "atomic densities directory complete path" : "/home/yakutovi/chargemol_09_26_2017/atomic_densities/",
     "input filename"                           : "valence_density",
-    "number of core electrons"                 : [
-        "1  0",
-        "2  0",
-        "3  0",
-        "4  0",
-        "5  2",
-        "6  2",
-        "7  2",
-        "8  2",
-        "9  2",
-        "10 2",
-        "11 2",
-        "12 2",
-        "13 10",
-        "14 10",
-        "15 10",
-        "16 10",
-        "17 10",
-        "18 10",
-        "19 10",
-        "20 10",
-        "21 10",
-        "22 10",
-        "23 10",
-        "24 10",
-        "25 10",
-        "26 10",
-        "27 10",
-        "28 10",
-        "29 18",
-        "30 18",
-        "35 28",
-        "53 46",
-        ]
 }).store()
 
-class DdecChargesWorkChain(WorkChain):
+@wf
+def extract_core_electrons(charge_density_folder):
+    fn = charge_density_folder.get_abs_path() + '/path/aiida.out'
+    with open(fn) as f:
+        content = f.readlines()
+    for n_line, line in enumerate(content):
+        if "- Atoms:" in line:
+            n_atoms = int(line.split()[2])
+        if "Atom  Kind  Element       X           Y           Z" in line:
+            break
+    res = { e.split()[3] : round(float(e.split()[7])) for e in content[n_line+2:n_line+n_atoms+2]}
+    res = [ k+' '+str(int(k)-int(v)) for k,v in res.items() ]
+    return ParameterData(dict={'number of core electrons': res}).store()
+
+
+class DdecCp2kChargesWorkChain(WorkChain):
     """A workchain that computes DDEC charges"""
     @classmethod
     def define(cls, spec):
-        super(DdecChargesWorkChain, cls).define(spec)
+        super(DdecCp2kChargesWorkChain, cls).define(spec)
         #TODO: Change to this when aiida 1.0.0 will be released
         #spec.expose_inputs(Cp2kDftBaseWorkChain, namespace='cp2k', exclude=('structure'))
 
@@ -118,8 +99,9 @@ class DdecChargesWorkChain(WorkChain):
         # specify the chain of calculations to be performed
         spec.outline(
                 cls.setup,
-                cls.run_cp2k_charge_density,
-                cls.run_ddec_point_charges,
+                cls.run_cp2k,
+                cls.prepare_ddec,
+                cls.run_ddec,
                 cls.return_results,
                 )
 
@@ -130,7 +112,7 @@ class DdecChargesWorkChain(WorkChain):
         """Perform initial setup"""
         pass
 
-    def run_cp2k_charge_density(self):
+    def run_cp2k(self):
         """Compute charge-density with CP2K"""
         #TODO Change to this when aiida 1.0.0 will be released
         # inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, namespace='base'))
@@ -153,10 +135,12 @@ class DdecChargesWorkChain(WorkChain):
             'code'                : self.inputs.cp2k_code,
             'structure'           : self.inputs.structure,
             'parameters'          : parameters,
-            '_options'            : self.inputs._cp2k_options,
             '_label'              : 'Cp2kDftBaseWorkChain',
             }
-
+        try:
+            inputs['_options'] = self.inputs._cp2k_options
+        except:
+            pass
         try:
             inputs['parent_folder'] = self.inputs.cp2k_parent_folder
         except:
@@ -167,20 +151,24 @@ class DdecChargesWorkChain(WorkChain):
         return ToContext(charge_density_calc=Outputs(running))
 
 
-    def run_ddec_point_charges(self):
-        """Compute ddec point charges from precomputed charge-density."""
-        charge_density = self.ctx.charge_density_calc['remote_folder']
-        #options['prepend_text'] = "export OMP_NUM_THREADS=12"
-        inputs = {
+    def prepare_ddec(self):
+        """Prepare inputs for ddec point charges calculation."""
+        # extract number of core electrons from the cp2k output
+        self.report("self.ctx.charge_density_calc: {}".format(str(self.ctx.charge_density_calc)))
+        core_e = extract_core_electrons(self.ctx.charge_density_calc['retrieved'])
+        # prepare input dictionary
+        self.ctx.ddec_inputs = {
             'code'                   : self.inputs.ddec_code,
-            'parameters'             : self.inputs.ddec_parameters,
-            'charge_density_folder'  : charge_density,
+            'charge_density_folder'  : self.ctx.charge_density_calc['remote_folder'],
+            'parameters'             : merge_ParameterData(self.inputs.ddec_parameters, core_e),
             '_options'               : self.inputs._ddec_options,
             '_label'                 : "DdecCalculation",
         }
 
+    def run_ddec(self):
+        """Compute ddec point charges from precomputed charge-density."""
         # Create the calculation process and launch it
-        running = submit(DdecCalculation.process(), **inputs)
+        running = submit(DdecCalculation.process(), **self.ctx.ddec_inputs)
         self.report("pk: {} | Running ddec to compute point charges based on the charge-density".format(running.pid))
         return ToContext(ddec_calc=Outputs(running))
 

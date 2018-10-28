@@ -7,7 +7,7 @@ from aiida.work.run import run, submit
 from aiida.work.workchain import WorkChain, ToContext, if_, while_, Outputs
 
 # subworkflows
-from workflows.charges import DdecChargesWorkChain
+from workflows.charges import DdecCp2kChargesWorkChain
 from aiida_cp2k.workflows import Cp2kRobustGeoOptWorkChain
 from aiida_raspa.workflows import RaspaConvergeWorkChain
 from aiida_zeopp.workflows import ZeoppBlockPocketsWorkChain
@@ -262,12 +262,12 @@ class Isotherm(WorkChain):
             '_cp2k_options'      : self.inputs._cp2k_options,
             'ddec_code'          : self.inputs.ddec_code,
             '_ddec_options'      : self.inputs._ddec_options,
-            '_label'             : "DdecChargesWorkChain",
+            '_label'             : "DdecCp2kChargesWorkChain",
         }
 
         # Create the calculation process and launch it
-        running = submit(DdecChargesWorkChain, **inputs)
-        self.report("pk: {} | Running DdecChargesWorkChain to compute the point charges".format(running.pid))
+        running = submit(DdecCp2kChargesWorkChain, **inputs)
+        self.report("pk: {} | Running DdecCp2kChargesWorkChain to compute the point charges".format(running.pid))
         return ToContext(point_charges_calc=Outputs(running))
 
     def parse_point_charges(self):
