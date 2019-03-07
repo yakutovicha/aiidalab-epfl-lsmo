@@ -1,1 +1,1 @@
-# mc-epfl-lsmo
+# aiidalab-epfl-lsmo

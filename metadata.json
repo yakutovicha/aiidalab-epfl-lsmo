@@ -1,4 +1,6 @@
 {
     "description": "Applications from the LSMO group",
-    "title": "LSMO apps"
+    "title": "LSMO apps",
+    "version": "0.1.0",
+    "logo": "miscellaneous/logos/LSMO.png"
 }
