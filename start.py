@@ -25,6 +25,7 @@ def get_start_widget(appbase, jupbase):
 
      <td valign="top"><ul>
     <li><a href="{appbase}/pores/pores.ipynb" target="_blank">Compute Pores</a>
+    <li><a href="{appbase}/barcode.ipynb" target="_blank">Compute Barcode</a></li>
     </ul></td>
     
     <td valign="top"><ul>
