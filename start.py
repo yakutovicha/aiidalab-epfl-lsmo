@@ -17,12 +17,11 @@ def get_start_widget(appbase, jupbase):
     </ul></td>
      
      <td valign="top"><ul>
-    <li><a href="{appbase}/pores/pores.ipynb" target="_blank">Compute Pores</a>
+    <li><a href="{appbase}/pores/pore_analysis.ipynb" target="_blank">Pore Analysis</a>
     </ul></td>
     
     <td valign="top"><ul>
-    <li><a href="{appbase}/multistage_geo_opt.ipynb" target="_blank">Multistage Geo Opt</a>
-    <li><a href="{appbase}/isotherm/isotherm_multi.ipynb" target="_blank">Analyse results</a>
+    <li><a href="{appbase}/multistage_geo_opt.ipynb" target="_blank">Geometry Optimization</a>
     </ul></td>
     </tr></table>
 """
