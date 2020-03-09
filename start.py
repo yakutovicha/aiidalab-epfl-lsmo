@@ -11,13 +11,11 @@ def get_start_widget(appbase, jupbase):
     <tr>
     <td valign="top"><ul>
     <li><a href="{appbase}/isotherm/isotherm.ipynb" target="_blank">Compute one</a>
-    <li><a href="{appbase}/isotherm/isotherm_multi.ipynb" target="_blank">Compute multiple</a>
     <li><a href="{appbase}/isotherm/database_analysis.ipynb" target="_blank">Analysis</a>
     </ul></td>
      
      <td valign="top"><ul>
     <li><a href="{appbase}/pores/pores.ipynb" target="_blank">Compute Pores</a>
-    <li><a href="{appbase}/barcode.ipynb" target="_blank">Compute Barcode</a></li>
     </ul></td>
     
     </tr></table>
