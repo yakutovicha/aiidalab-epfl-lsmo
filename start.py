@@ -7,31 +7,22 @@ def get_start_widget(appbase, jupbase):
     <tr>
         <th style="text-align:center">Isotherm</th>
         <th style="width:70px" rowspan=2></th>
-        <th style="text-align:center">Charges</th>        
-        <th style="width:70px" rowspan=2></th>
         <th style="text-align:center">Pore analysis</th>        
         <th style="width:70px" rowspan=2></th>
-        <th style="text-align:center">Import your data to AiiDA</th>        
+        <th style="text-align:center">Geometry Optimization</th>
     <tr>
     <td valign="top"><ul>
     <li><a href="{appbase}/isotherm/isotherm.ipynb" target="_blank">Compute one</a>
-    <li><a href="{appbase}/isotherm/isotherm_multi.ipynb" target="_blank">Compute multiple</a>
-    <li><a href="{appbase}/isotherm/database_analysis.ipynb" target="_blank">Analysis</a>
+    <li><a href="{appbase}/isotherm/analyse_results.ipynb" target="_blank">Analyse the results</a>
     </ul></td>
      
      <td valign="top"><ul>
-    <li><a href="{appbase}/charges/compute_charges.ipynb" target="_blank">Compute Charges</a>
-    </ul></td>
-
-     <td valign="top"><ul>
-    <li><a href="{appbase}/pores/pores.ipynb" target="_blank">Compute Pores</a>
+    <li><a href="{appbase}/pores/pore_analysis.ipynb" target="_blank">Pore Analysis</a>
     </ul></td>
     
     <td valign="top"><ul>
-    <li><a href="{appbase}/import/import.ipynb" target="_blank">Import database</a>
-    <li><a href="{appbase}/import/plot.ipynb" target="_blank">Plot imported data</a>
+    <li><a href="{appbase}/multistage_geo_opt.ipynb" target="_blank">Geometry Optimization</a>
     </ul></td>
-    
     </tr></table>
 """
     
