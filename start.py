@@ -22,6 +22,7 @@ def get_start_widget(appbase, jupbase):
     
     <td valign="top"><ul>
     <li><a href="{appbase}/multistage_geo_opt.ipynb" target="_blank">Geometry Optimization</a>
+    <li><a href="{appbase}/multistage_geo_opt_ddec.ipynb" target="_blank">Geometry Optimization and Charges</a>
     </ul></td>
     </tr></table>
 """
