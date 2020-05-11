@@ -1,0 +1,11 @@
+label: "deneb-che609"
+hostname: "deneb1.epfl.ch"
+description: Deneb EPFL computer using serial partition
+transport: ssh
+scheduler: "slurm"
+work_dir: "/scratch/{username}/aiida_run/"
+shebang: "#!/bin/bash"
+mpirun_command: "srun -n {tot_num_mpiprocs}"
+mpiprocs_per_machine: "1"
+prepend_text: "#SBATCH --partition=serial\n#SBATCH --reservation=lsmo-ChE609\n#SBATCH --account=lsmo"
+append_text: " "

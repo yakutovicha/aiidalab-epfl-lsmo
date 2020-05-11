@@ -1,0 +1,8 @@
+label: "egulp-fc4d7b7"
+description: "egulp cloned from https://github.com/danieleongari/egulp.git"
+input_plugin: "qeq.qeq"
+on_computer: true
+remote_abs_path: "/work/lsmo/aiida-lsmo-codes/bin/egulp_fc4d7b7_deneb"
+computer: "deneb-che609"
+prepend_text: "module load intel"
+append_text: " "
