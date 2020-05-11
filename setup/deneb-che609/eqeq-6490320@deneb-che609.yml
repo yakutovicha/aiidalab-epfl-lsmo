@@ -1,0 +1,8 @@
+label: "eqeq-6490320"
+description: "eqeq cloned from cloned from https://github.com/danieleongari/EQeq.git"
+input_plugin: "qeq.eqeq"
+on_computer: true
+remote_abs_path: "/work/lsmo/aiida-lsmo-codes/bin/eqeq_6490320_ubu18"
+computer: "deneb-che609"
+prepend_text: " "
+append_text: " "

@@ -1,0 +1,11 @@
+label: "fidis-che609"
+hostname: "fidis.epfl.ch"
+description: fidis EPFL computer
+transport: ssh
+scheduler: "slurm"
+work_dir: "/scratch/{username}/aiida_run/"
+shebang: "#!/bin/bash"
+mpirun_command: "srun -n {tot_num_mpiprocs}"
+mpiprocs_per_machine: "28"
+prepend_text: "#SBATCH --reservation=lsmo-ChE609\n#SBATCH --account=lsmo"
+append_text: " "

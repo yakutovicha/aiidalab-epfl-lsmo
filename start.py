@@ -10,6 +10,8 @@ def get_start_widget(appbase, jupbase):
         <th style="text-align:center">Pore analysis</th>        
         <th style="width:70px" rowspan=2></th>
         <th style="text-align:center">Geometry Optimization</th>
+        <th style="width:70px" rowspan=2></th>
+        <th style="text-align:center">Computers/Codes</th>
     <tr>
     <td valign="top"><ul>
     <li><a href="{appbase}/isotherm/isotherm.ipynb" target="_blank">Compute one</a>
@@ -25,6 +27,11 @@ def get_start_widget(appbase, jupbase):
     <li><a href="{appbase}/multistage_geo_opt.ipynb" target="_blank">Geometry Optimization</a>
     <li><a href="{appbase}/multistage_geo_opt_ddec.ipynb" target="_blank">Geometry Optimization and Charges</a>
     </ul></td>
+    
+    <td valign="top"><ul>
+    <li><a href="{appbase}/setup_computers_codes.ipynb" target="_blank">Setup</a>
+    </ul></td>
+    
     </tr></table>
 """
     
