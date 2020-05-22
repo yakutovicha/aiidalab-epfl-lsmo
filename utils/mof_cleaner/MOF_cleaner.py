@@ -7,9 +7,8 @@ import sys
 from collections import Counter
 
 def clean_MOF_free_solvents(cif, moleculesize_ratio = 0.5, framework_min_size = 20 ,solvent_max_size = 100,check_metal = True):
-    """""""""
-    Find the free solvent molecules in the pores. Takes a ASE structure and return solvent indices.
-    """""""""
+    """Find the free solvent molecules in the pores. Takes a ASE structure and return solvent indices."""
+    
     output_str = ""
     if hasattr(cif, 'periodic_distance_matrix'):
         distance_mat = cif.periodic_distance_matrix
@@ -18,22 +17,22 @@ def clean_MOF_free_solvents(cif, moleculesize_ratio = 0.5, framework_min_size = 
         cif.periodic_distance_matrix = distance_mat
     allatomtypes = cif.get_chemical_symbols()
     adj_matrix=compute_adj_matrix(distance_mat,allatomtypes)
-    """""""""
-    check number of connected components.
-    if more than 1: it checks if the structure is interpenetrated. Fails if no metal in one of the connected components (identified by the graph).
-    This includes floating solvent molecules.
-    """""""""
+    
+    # Check number of connected components.
+    # if more than 1: it checks if the structure is interpenetrated. Fails if no metal in one of the connected components (identified by the graph).
+    # This includes floating solvent molecules.
+    
     n_components, labels_components = sparse.csgraph.connected_components(csgraph=adj_matrix, directed=False, return_labels=True)
-    """ two scenarios for finding solvents:
-        1. based on the size of component
-        2. based on metalic components
-    first we find the largest connected components, if it has metal, we assume the structure is a MOF
-    """
+    # Two scenarios for finding solvents:
+    #    1. based on the size of component
+    #    2. based on metalic components
+    # first we find the largest connected components, if it has metal, we assume the structure is a MOF
+
     components_sizes = dict(Counter(labels_components))
     largest_component = max(components_sizes, key=components_sizes.get)
     largest_component_size = components_sizes[largest_component]
 
-    " check if the components based on metal" 
+    # Check if the components based on metal.
     if check_metal:
         metal_list = set(find_metal(allatomtypes))
         cif_has_metal = False
@@ -41,11 +40,6 @@ def clean_MOF_free_solvents(cif, moleculesize_ratio = 0.5, framework_min_size = 
         if  set(inds_in_comp) & metal_list:
             cif_has_metal = True
 
-    # for j in nx.connected_components(self.graph):
-    #     # return a list of nodes of connected graphs (decisions to isolate them will come later)
-    #     # Upper limit on molecule size is 100 atoms.
-    #     if((len(j) <= self.graph.original_size*size_cutoff) or (len(j) < 25)) and (not len(j) > 100) :
-    #         self.molecules.append(j)
     main_components = []
     main_components_atoms = []
     solvent_components = []
@@ -75,8 +69,6 @@ def clean_MOF_free_solvents(cif, moleculesize_ratio = 0.5, framework_min_size = 
     if solvent_id > 0:
         output_str += "Found {} solvents in the pore\n".format(solvent_id)
         
-#     if len(set(main_components)) > 1 :
-#         output_str += "structure is interpenetrated\n"
     return solvent_components, solvent_components_atoms, output_str
 
 
@@ -101,5 +93,5 @@ def find_atomic_overlap(cif, tolerance = 1.0):
     else:
         output_str +="atomic overlap was found for {} atoms".format(len(overlap_atoms))
     overlap_atoms_types = [allatomtypes[i] for i in overlap_atoms]
-    return  overlap_atoms, overlap_atoms_types , output_str
+    return  overlap_atoms, overlap_atoms_types, output_str
 
