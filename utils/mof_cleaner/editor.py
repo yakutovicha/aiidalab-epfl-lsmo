@@ -1,16 +1,16 @@
 import ipywidgets as ipw
-from traitlets import Instance, Int, Set, Unicode, Union, link, default, observe, validate
+from traitlets import Instance, Int, List, Unicode, Union, link, default, observe, validate
 from ase import Atoms
 from .MOF_cleaner import clean_MOF_free_solvents,find_atomic_overlap
 from aiidalab_widgets_base import StructureManagerWidget
 
 class SolventOverlapCleaner(ipw.VBox):
     """Widget that allows for the basic structure editing."""
-    manager = Instance(StructureManagerWidget, allow_none=True)
     structure = Instance(Atoms, allow_none=True)
-    selection = Set(Int)
+    selection = List(Int)
 
-    def __init__(self):
+    def __init__(self, title=''):
+        self.title = title
         button_freesolvent = ipw.Button(description="Find free solvent")
         button_freesolvent.on_click(self.find_freesolvent)
         self.tolerance = ipw.FloatSlider(
@@ -79,12 +79,3 @@ class SolventOverlapCleaner(ipw.VBox):
         overlap_indices, overlap_atomtypes, log = find_atomic_overlap(self.structure, tolerance=self.tolerance.value)
         self.output.value = log
         self.selection =  overlap_indices
-
-    @observe('manager')
-    def _change_manager(self, value):
-        """Set structure manager trait."""
-        manager = value['new']
-        if manager is None:
-            return
-        link((manager, 'structure'), (self, 'structure'))
-        link((self, 'selection'), (manager.viewer, 'selection'))
