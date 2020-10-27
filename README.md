@@ -1,3 +1,3 @@
-# AiiDA lab EPFL LSMO
+# AiiDAlab EPFL LSMO
 
-AiiDA lab application developed for the needs of LSMO laboratory at EPFL.
+AiiDAlab application developed for the needs of LSMO laboratory at EPFL.
