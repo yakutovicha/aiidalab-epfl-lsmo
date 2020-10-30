@@ -24,7 +24,6 @@ def get_start_widget(appbase, jupbase):
 
     <td valign="top"><ul>
     <li><a href="{appbase}/compute_isotherm.ipynb" target="_blank">Compute one</a>
-    <li><a href="{appbase}/compute_henry_coefficient.ipynb" target="_blank">Compute Henry Coefficient</a>
     <li><a href="{appbase}/analyse_isotherm_results.ipynb" target="_blank">Analyse the results</a>
     <li><a href="{appbase}/results.ipynb?process_label=IsothermWorkChain" target="_blank">Results</a>
     </ul></td>
