@@ -5,6 +5,18 @@ from mofchecker import MOFChecker
 import tempfile
 from itertools import chain
 
+ENABLED_CHECKS = [
+    "no_atomic_overlaps",
+    "no_undercoordinated_carbon",
+    "no_overcoordinated_carbon",
+    "no_overcoordinated_hydrogen",
+    "no_overcoordinated_nitrogen",
+    "no_undercoordinated_nitrogen",
+    "no_undercoordinated_rare_earth",
+    "no_floating_molecule",
+    "no_false_terminal_oxo",
+]
+
 
 class MofCheckerWidget(ipw.VBox):
     """Widget that allows to check MOF structure correctness."""
@@ -81,7 +93,7 @@ class MofCheckerWidget(ipw.VBox):
     def select_lone_mol(self, _=None):
         self.selection = list(chain.from_iterable(self.mfchk.lone_molecule_indices))
 
-class CheckStructure(ipw.VBox):
+class CheckMofStructure(ipw.VBox):
     structure = Instance(Atoms, allow_none=True)
 
     def __init__(self, **kwargs):
@@ -98,13 +110,12 @@ class CheckStructure(ipw.VBox):
             self.mfchk = MOFChecker.from_ase(self.structure, primitive=False)
             issue_found = False
             for (check_name, check) in self.mfchk.checks.items():
-                try:
+                if check_name in ENABLED_CHECKS:
                     if not check.is_ok:
                         issue_found = True
+                    self.text.value += check_name
                     self.text.value += "\u2705 OK: " if check.is_ok else "\u274C Fail: "
                     self.text.value += f"{check.description} </br>"
-                except:
-                    pass
             self.check_button.button_style = 'danger' if issue_found else 'success'
 
     @observe('structure')
