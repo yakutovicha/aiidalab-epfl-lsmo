@@ -1,9 +1,12 @@
 import ipywidgets as ipw
+import functools as fct
 from traitlets import Instance, Int, List, observe
 from ase import Atoms, Atom
 from mofchecker import MOFChecker
 import tempfile
 from itertools import chain
+from IPython.display import clear_output
+
 
 ENABLED_CHECKS = [
     "no_atomic_overlaps",
@@ -17,7 +20,6 @@ ENABLED_CHECKS = [
     "no_false_terminal_oxo",
 ]
 
-
 class MofCheckerWidget(ipw.VBox):
     """Widget that allows to check MOF structure correctness."""
     structure = Instance(Atoms, allow_none=True)
@@ -27,47 +29,51 @@ class MofCheckerWidget(ipw.VBox):
         self.title = title
         button_check = ipw.Button(description="Analyse structure")
         button_check.on_click(self.check_structure)
-
-        # Undercoodinated C.
-        button_select_undercoord_c_ind = ipw.Button(description="Select these indices")
-        button_select_undercoord_c_ind.on_click(self.select_underc_c_ind)
-        self.l_undercoord_c_ind = ipw.HTML("<b>Undercoordinated C:</b> ")
-
-        # Overcoordinated C.
-        button_select_overcoord_c_ind = ipw.Button(description="Select these indices")
-        button_select_overcoord_c_ind.on_click(self.select_overc_c_ind)
-        self.l_overcoord_c_ind = ipw.HTML("<b>Overcoordinated C:</b> ")
-
-        # Overcoordinated H.
-        button_select_overcoord_h_ind = ipw.Button(description="Select these indices")
-        button_select_overcoord_h_ind.on_click(self.select_overc_h_ind)
-        self.l_overcoord_h_ind = ipw.HTML("<b>Overcoordinated H:</b> ")
-
-        # Lone molecules.
-        button_select_lone_mol_ind = ipw.Button(description="Select these indices")
-        button_select_lone_mol_ind.on_click(self.select_lone_mol)
-        self.l_lone_mol_ind = ipw.HTML("<b>Lone molecules:</b> ")
-
-        # Add missing hydrogens.
-        self.button_add_missing_hydrogens = ipw.Button(description="Add missing hydrogens", disabled=True)
-        self.button_add_missing_hydrogens.on_click(self.add_missing_hydrogens)
+        self.checks = []
+        self._output = ipw.Output()
+        self.missing_h_button = ipw.Button(description="Add", layout={"width": "initial"})
 
         super().__init__(children=[button_check,
-                                   ipw.HBox([button_select_overcoord_c_ind, self.l_overcoord_c_ind]),
-                                   ipw.HBox([button_select_undercoord_c_ind, self.l_undercoord_c_ind]),
-                                   ipw.HBox([button_select_overcoord_h_ind, self.l_overcoord_h_ind]),
-                                   ipw.HBox([button_select_lone_mol_ind, self.l_lone_mol_ind]),
-                                   self.button_add_missing_hydrogens,
+                                   self._output,
                                   ])
-
+    
     def check_structure(self, _=None):
-        self.mfchk = MOFChecker.from_ase(self.structure, primitive=False)
+        
+        if self.structure is None:
+            return
 
-        self.l_overcoord_c_ind.value = "<b>Overcoordinated C:</b> " + ', '.join(map(str, self.mfchk.overvalent_c_indices))
-        self.l_undercoord_c_ind.value = "<b>Undercoordinated C:</b> " + ', '.join(map(str, self.mfchk.undercoordinated_c_indices))
-        self.l_overcoord_h_ind.value = "<b>Overcoordinated H:</b> " + ', '.join(map(str, self.mfchk.overvalent_h_indices))
-        self.l_lone_mol_ind.value = "<b>Lone molecules:</b> " + ', '.join(map(str, self.mfchk.lone_molecule_indices))
-        self.button_add_missing_hydrogens.disabled = False
+        self.mfchk = MOFChecker.from_ase(self.structure, primitive=False)
+        self.checks = []
+        if self.structure:
+            self.checks = [ check for (check_name, check) in self.mfchk.checks.items() if check_name in ENABLED_CHECKS]
+        
+        issue_found = False
+        
+        with self._output:
+            clear_output()
+            for check in self.checks:
+                if not check.is_ok:
+                    issue_found = True
+                    try:
+                        selection = list(chain.from_iterable(check.flagged_indices))
+                    except TypeError:
+                        selection = check.flagged_indices
+                    button = ipw.Button(description="Select", layout={"width": "initial"})
+                    button.on_click(fct.partial(self._select_atoms, selection=selection))
+                    #text = ipw.HTML("Found " + check.name.lower() + ": " + ', '.join(map(str, selection)))
+                    text = ipw.HTML("Found " + check.name.lower())
+                    display(ipw.HBox([text, button]))
+                    
+            if self.mfchk.undercoordinated_c_candidate_positions + self.mfchk.undercoordinated_n_candidate_positions:
+                self.missing_h_button.disabled = False
+                self.missing_h_button.on_click(self.add_missing_hydrogens)
+                display(ipw.HBox([ipw.HTML("Missing hydrogens found"), self.missing_h_button]))
+            
+            if not issue_found:
+                display(ipw.HTML("No issues found \u2705"))
+            
+    def _select_atoms(self, _=None, selection=None):
+        self.selection = selection
 
     def add_missing_hydrogens(self, _=None):
         """Add atoms."""
@@ -81,17 +87,11 @@ class MofCheckerWidget(ipw.VBox):
         self.structure = atoms
         self.selection = selection
 
-    def select_overc_c_ind(self, _=None):
-        self.selection = self.mfchk.overvalent_c_indices
-
-    def select_underc_c_ind(self, _=None):
-        self.selection = self.mfchk.undercoordinated_c_indices
-
-    def select_overc_h_ind(self, _=None):
-        self.selection = self.mfchk.overvalent_h_indices
-
-    def select_lone_mol(self, _=None):
-        self.selection = list(chain.from_iterable(self.mfchk.lone_molecule_indices))
+    @observe('structure')
+    def observe_structure(self, _=None):
+        self.missing_h_button.disabled = True
+        with self._output:
+            clear_output()
 
 class CheckMofStructure(ipw.VBox):
     structure = Instance(Atoms, allow_none=True)
@@ -113,7 +113,6 @@ class CheckMofStructure(ipw.VBox):
                 if check_name in ENABLED_CHECKS:
                     if not check.is_ok:
                         issue_found = True
-                    self.text.value += check_name
                     self.text.value += "\u2705 OK: " if check.is_ok else "\u274C Fail: "
                     self.text.value += f"{check.description} </br>"
             self.check_button.button_style = 'danger' if issue_found else 'success'
@@ -122,4 +121,3 @@ class CheckMofStructure(ipw.VBox):
     def observe_structure(self, _=None):
         self.check_button.button_style = 'warning'
         self.text.value = ""
-
