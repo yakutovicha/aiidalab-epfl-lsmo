@@ -45,7 +45,7 @@ class MofCheckerWidget(ipw.VBox):
         self.mfchk = MOFChecker.from_ase(self.structure, primitive=False)
         self.checks = []
         if self.structure:
-            self.checks = [ check for (check_name, check) in self.mfchk.checks.items() if check_name in ENABLED_CHECKS]
+            self.checks = [check for (check_name, check) in self.mfchk.checks.items() if check_name in ENABLED_CHECKS]
         
         issue_found = False
         
@@ -60,7 +60,6 @@ class MofCheckerWidget(ipw.VBox):
                         selection = check.flagged_indices
                     button = ipw.Button(description="Select", layout={"width": "initial"})
                     button.on_click(fct.partial(self._select_atoms, selection=selection))
-                    #text = ipw.HTML("Found " + check.name.lower() + ": " + ', '.join(map(str, selection)))
                     text = ipw.HTML("Found " + check.name.lower())
                     display(ipw.HBox([text, button]))
                     
@@ -98,7 +97,7 @@ class CheckMofStructure(ipw.VBox):
 
     def __init__(self, **kwargs):
         self.text = ipw.HTML()
-        self.check_button = ipw.Button(description="Final Structure Check", button_style = 'warning')
+        self.check_button = ipw.Button(description="Final Structure Check", button_style='warning')
         self.check_button.on_click(self.check_structure)
         super().__init__([self.check_button, self.text], **kwargs)
 
